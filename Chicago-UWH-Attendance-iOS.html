@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Chicago UWH</title>
+
+<!-- iOS "Add to Home Screen" support -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Chicago UWH" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0A1B28" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='36' fill='%230A1B28'/%3E%3Cpath d='M20 70 Q35 55 50 70 T80 70 T110 70 T140 70 T170 70' fill='none' stroke='%233FC1B0' stroke-width='8' stroke-linecap='round'/%3E%3Cpath d='M20 100 Q35 85 50 100 T80 100 T110 100 T140 100 T170 100' fill='none' stroke='%233FC1B0' stroke-width='8' stroke-linecap='round' opacity='0.55'/%3E%3Cpath d='M20 130 Q35 115 50 130 T80 130 T110 130 T140 130 T170 130' fill='none' stroke='%233FC1B0' stroke-width='8' stroke-linecap='round' opacity='0.3'/%3E%3C/svg%3E" />
+
+<style>
+  :root {
+    --bg: #0A1B28;
+    --surface: #0F2536;
+    --surface-hover: #123246;
+    --border: #16324A;
+    --border-strong: #2A4E68;
+    --text: #E7F1F6;
+    --text-bright: #F3FAFC;
+    --muted: #5B8AA6;
+    --muted-2: #9EC4D8;
+    --accent: #3FC1B0;
+    --accent-hover: #5CD4C4;
+    --owed: #F3B9C2;
+    --danger-bg: #3A1B22;
+    --danger-border: #7A2E3A;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+    min-height: 100vh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 18px 100px; }
+  header { border-bottom: 1px solid var(--border); }
+  .header-inner { padding: 28px 0 18px; }
+  .eyebrow-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .eyebrow { display: flex; align-items: center; gap: 8px; color: var(--accent); }
+  .eyebrow span {
+    font-family: 'SF Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: 0.25em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .synced-note { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+  .title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+  h1 {
+    font-size: 34px; font-weight: 800; letter-spacing: 0.005em; color: var(--text-bright);
+    margin: 0; cursor: pointer; border-bottom: 1px dashed transparent;
+  }
+  h1:active { border-color: var(--border-strong); }
+  #nameInput {
+    font-size: 30px; font-weight: 800; color: var(--text-bright); background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: 6px; padding: 4px 8px;
+    font-family: inherit; width: 100%;
+  }
+  .fee-row { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+  .fee-row span.label { color: var(--muted); }
+  #feeDisplay { font-family: ui-monospace, monospace; color: var(--accent); border-bottom: 1px dashed var(--border-strong); background: none; border-top: none; border-left: none; border-right: none; padding: 0; }
+  #feeInput { width: 70px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 4px; padding: 4px 6px; color: var(--accent); font-family: ui-monospace, monospace; }
+  .wave { width: 100%; height: 16px; color: var(--border); display: block; }
+
+  nav { margin-top: 18px; }
+  .tabs { display: flex; gap: 4px; background: var(--surface); padding: 4px; border-radius: 10px; border: 1px solid var(--border); overflow-x: auto; }
+  .tab-btn {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+    padding: 9px 8px; border-radius: 7px; font-size: 13px; font-weight: 600; white-space: nowrap;
+    background: none; border: none; color: var(--muted);
+  }
+  .tab-btn.active { background: var(--surface-hover); color: var(--accent); }
+
+  main { padding-top: 20px; }
+  .section { display: none; }
+  .section.active { display: block; }
+
+  .row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  input[type=date], input[type=text], input[type=number] {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+    font-size: 15px; color: var(--text); font-family: inherit;
+  }
+  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(63,193,176,0.3); }
+  .mono { font-family: ui-monospace, monospace; }
+  .muted { color: var(--muted); }
+
+  .list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-top: 14px; }
+  .list-item { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .list-item:last-child { border-bottom: none; }
+  .list-item.pressable { width: 100%; text-align: left; border: none; }
+
+  .check { width: 24px; height: 24px; border-radius: 999px; border: 2px solid var(--border-strong); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .check.on { background: var(--accent); border-color: var(--accent); }
+  .check svg { display: none; }
+  .check.on svg { display: block; }
+
+  .btn {
+    background: var(--accent); color: var(--bg); font-weight: 700; border: none; border-radius: 8px;
+    padding: 13px; font-size: 15px; width: 100%; margin-top: 18px;
+  }
+  .btn:active { background: var(--accent-hover); }
+  .btn-outline {
+    background: none; border: 1px solid var(--border-strong); color: var(--muted-2);
+    border-radius: 8px; padding: 7px 12px; font-size: 12px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 5px; margin-top: 14px;
+  }
+  .btn-small { background: var(--accent); color: var(--bg); border: none; border-radius: 6px; padding: 7px 12px; font-size: 13px; font-weight: 700; }
+  .btn-text-danger { background: none; border: none; color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 4px; padding: 4px 0; }
+
+  .add-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .add-row input { flex: 1; }
+  .add-row button { background: var(--accent); color: var(--bg); font-weight: 700; border: none; border-radius: 8px; padding: 0 16px; display: flex; align-items: center; gap: 5px; font-size: 14px; }
+
+  .empty { text-align: center; padding: 60px 16px; border: 1px dashed var(--border-strong); border-radius: 10px; color: var(--muted); }
+  .empty .t { color: var(--muted-2); font-weight: 600; margin: 8px 0 4px; }
+
+  .balance-total { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+  .balance-total .amt { font-family: ui-monospace, monospace; font-size: 26px; color: var(--owed); }
+  .bal-name { color: var(--text); font-size: 15px; }
+  .bal-sub { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; margin-top: 2px; }
+  .bal-amt { font-family: ui-monospace, monospace; font-size: 17px; }
+  .bal-amt.pos { color: var(--owed); }
+  .bal-amt.zero { color: var(--accent); }
+  .pay-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px 14px; }
+  .pay-row input { width: 100px; }
+
+  .chip { font-size: 12px; background: var(--surface-hover); color: var(--muted-2); border-radius: 999px; padding: 5px 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 10px; }
+  .session-header { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; }
+  .session-detail { padding: 0 0 12px; }
+
+  #errorBanner { display: none; background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--owed); font-size: 13px; border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
+
+  svg.icon { width: 15px; height: 15px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="header-inner">
+      <div class="eyebrow-row">
+        <div class="eyebrow">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0"/><path d="M2 18c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0"/></svg>
+          <span>Attendance &amp; Dues</span>
+        </div>
+        <div class="synced-note" id="syncNote">Connecting…</div>
+      </div>
+      <div class="title-row">
+        <h1 id="titleEl"></h1>
+        <input id="nameInput" style="display:none" />
+        <div class="fee-row">
+          <span class="label">Fee / session</span>
+          <button id="feeDisplay"></button>
+          <input id="feeInput" type="number" step="0.5" min="0" style="display:none" />
+        </div>
+      </div>
+    </div>
+    <svg class="wave" viewBox="0 0 400 16" preserveAspectRatio="none"><path d="M0 8 Q 12.5 0, 25 8 T 50 8 T 75 8 T 100 8 T 125 8 T 150 8 T 175 8 T 200 8 T 225 8 T 250 8 T 275 8 T 300 8 T 325 8 T 350 8 T 375 8 T 400 8" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+  </header>
+
+  <div id="errorBanner"></div>
+
+  <nav>
+    <div class="tabs">
+      <button class="tab-btn" data-tab="practice">Today</button>
+      <button class="tab-btn" data-tab="balances">Balances</button>
+      <button class="tab-btn" data-tab="roster">Roster</button>
+      <button class="tab-btn" data-tab="history">History</button>
+    </div>
+  </nav>
+
+  <main>
+    <section id="practice" class="section"></section>
+    <section id="balances" class="section"></section>
+    <section id="roster" class="section"></section>
+    <section id="history" class="section"></section>
+  </main>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script>
+const STORAGE_KEY = "uhc-attendance-v1";
+const uid = () => Math.random().toString(36).slice(2, 10);
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const money = (n) => (n < 0 ? "-$" : "$") + Math.abs(n).toFixed(2);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAGt8iFsrESVBcHKjR7atXwldslCk6WIh8",
+  authDomain: "chicago-uwh-attendance.firebaseapp.com",
+  databaseURL: "https://chicago-uwh-attendance-default-rtdb.firebaseio.com/",
+  projectId: "chicago-uwh-attendance",
+  storageBucket: "chicago-uwh-attendance.firebasestorage.app",
+  messagingSenderId: "978542789457",
+  appId: "1:978542789457:web:9914e719079a84e42f8970"
+};
+firebase.initializeApp(firebaseConfig);
+const dbRef = firebase.database().ref("chicago-uwh");
+
+let data = { ...defaultState };
+let tab = "practice";
+let openSessionId = null;
+let payingForId = null;
+let connected = false;
+let suppressNextRemoteRender = false;
+
+function save() {
+  suppressNextRemoteRender = true;
+  dbRef.set(data)
+    .then(() => { document.getElementById("errorBanner").style.display = "none"; })
+    .catch(() => {
+      const b = document.getElementById("errorBanner");
+      b.textContent = "Couldn't sync — check your connection. Your last change may not have saved for others.";
+      b.style.display = "block";
+    });
+}
+
+dbRef.on("value", (snapshot) => {
+  connected = true;
+  document.getElementById("syncNote").textContent = "Synced live";
+  if (suppressNextRemoteRender) { suppressNextRemoteRender = false; return; }
+  const val = snapshot.val();
+  data = val ? { ...defaultState, ...val } : { ...defaultState };
+  renderAll();
+});
+
+dbRef.once("value").catch(() => {
+  const b = document.getElementById("errorBanner");
+  b.textContent = "Couldn't connect to the shared database. Check your internet connection and try reloading.";
+  b.style.display = "block";
+});
+
+function downloadCSV(filename, rows) {
+  const escCsv = (v) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const csv = rows.map((r) => r.map(escCsv).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function computeBalances() {
+  const map = {};
+  data.roster.forEach((p) => { map[p.id] = { id: p.id, name: p.name, sessionsAttended: 0, owed: 0, paid: 0 }; });
+  data.sessions.forEach((s) => {
+    s.attendeeIds.forEach((pid) => {
+      if (map[pid]) { map[pid].sessionsAttended += 1; map[pid].owed += s.fee; }
+    });
+  });
+  data.payments.forEach((pay) => { if (map[pay.personId]) map[pay.personId].paid += pay.amount; });
+  return Object.values(map).map((p) => ({ ...p, balance: p.owed - p.paid }));
+}
+
+// ---------- Header ----------
+function renderHeader() {
+  document.getElementById("titleEl").textContent = data.clubName;
+  document.getElementById("feeDisplay").textContent = money(data.fee);
+}
+
+document.getElementById("titleEl").addEventListener("click", () => {
+  const input = document.getElementById("nameInput");
+  const title = document.getElementById("titleEl");
+  input.value = data.clubName;
+  title.style.display = "none";
+  input.style.display = "block";
+  input.focus();
+  input.select();
+});
+function commitName() {
+  const input = document.getElementById("nameInput");
+  const title = document.getElementById("titleEl");
+  const v = input.value.trim();
+  if (v) { data.clubName = v; save(); }
+  input.style.display = "none";
+  title.style.display = "block";
+  renderHeader();
+}
+document.getElementById("nameInput").addEventListener("blur", commitName);
+document.getElementById("nameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") commitName(); });
+
+document.getElementById("feeDisplay").addEventListener("click", () => {
+  const input = document.getElementById("feeInput");
+  const disp = document.getElementById("feeDisplay");
+  input.value = data.fee;
+  disp.style.display = "none";
+  input.style.display = "block";
+  input.focus();
+  input.select();
+});
+function commitFee() {
+  const input = document.getElementById("feeInput");
+  const disp = document.getElementById("feeDisplay");
+  const v = parseFloat(input.value);
+  if (!isNaN(v) && v >= 0) { data.fee = v; save(); }
+  input.style.display = "none";
+  disp.style.display = "block";
+  renderHeader();
+}
+document.getElementById("feeInput").addEventListener("blur", commitFee);
+document.getElementById("feeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") commitFee(); });
+
+// ---------- Tabs ----------
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => { tab = btn.dataset.tab; renderAll(); });
+});
+
+function emptyState(title, body) {
+  return `<div class="empty">
+    <svg class="icon" style="width:28px;height:28px;color:var(--border-strong)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0"/><path d="M2 18c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0"/></svg>
+    <div class="t">${esc(title)}</div>
+    <div>${esc(body)}</div>
+  </div>`;
+}
+
+// ---------- Practice tab ----------
+let practiceDate = todayISO();
+let checkedIds = new Set();
+
+function initPracticeChecks() {
+  const existing = data.sessions.find((s) => s.date === practiceDate);
+  checkedIds = new Set(existing ? existing.attendeeIds : []);
+}
+initPracticeChecks();
+
+function renderPractice() {
+  const el = document.getElementById("practice");
+  if (data.roster.length === 0) {
+    el.innerHTML = emptyState("No one on the roster yet", "Add club members in the Roster tab before marking attendance.");
+    return;
+  }
+  const existing = data.sessions.find((s) => s.date === practiceDate);
+  el.innerHTML = `
+    <div class="row-between" style="margin-bottom:14px">
+      <input type="date" id="dateInput" value="${practiceDate}" />
+      <span class="mono muted" style="font-size:12px">${checkedIds.size} of ${data.roster.length} present · ${money(checkedIds.size * data.fee)}</span>
+    </div>
+    <div class="list">
+      ${data.roster.map((p) => `
+        <button class="list-item pressable" data-toggle="${p.id}">
+          <span>${esc(p.name)}</span>
+          <span class="check ${checkedIds.has(p.id) ? "on" : ""}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0A1B28" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+        </button>
+      `).join("")}
+    </div>
+    <button class="btn" id="saveAttendance">${existing ? "Update attendance" : "Save attendance"}</button>
+  `;
+  document.getElementById("dateInput").addEventListener("change", (e) => {
+    practiceDate = e.target.value;
+    initPracticeChecks();
+    renderPractice();
+  });
+  el.querySelectorAll("[data-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.toggle;
+      checkedIds.has(id) ? checkedIds.delete(id) : checkedIds.add(id);
+      renderPractice();
+    });
+  });
+  document.getElementById("saveAttendance").addEventListener("click", () => {
+    const attendeeIds = Array.from(checkedIds);
+    const idx = data.sessions.findIndex((s) => s.date === practiceDate);
+    if (idx >= 0) data.sessions[idx].attendeeIds = attendeeIds;
+    else data.sessions.push({ id: uid(), date: practiceDate, fee: data.fee, attendeeIds });
+    save();
+    renderPractice();
+    renderBalances();
+    renderHistory();
+  });
+}
+
+// ---------- Roster tab ----------
+function renderRoster() {
+  const el = document.getElementById("roster");
+  el.innerHTML = `
+    <div class="add-row">
+      <input type="text" id="nameToAdd" placeholder="Add a member's name" />
+      <button id="addPersonBtn">+ Add</button>
+    </div>
+    <div id="rosterList"></div>
+  `;
+  const listEl = document.getElementById("rosterList");
+  if (data.roster.length === 0) {
+    listEl.innerHTML = emptyState("Roster is empty", "Add your club members above to get started.");
+  } else {
+    listEl.innerHTML = `<div class="list">${data.roster.map((p) => `
+      <div class="list-item">
+        <span>${esc(p.name)}</span>
+        <button data-remove="${p.id}" style="background:none;border:none;color:var(--muted)">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        </button>
+      </div>`).join("")}</div>`;
+  }
+  const addPerson = () => {
+    const input = document.getElementById("nameToAdd");
+    const name = input.value.trim();
+    if (!name) return;
+    data.roster.push({ id: uid(), name });
+    save();
+    initPracticeChecks();
+    renderAll();
+  };
+  document.getElementById("addPersonBtn").addEventListener("click", addPerson);
+  document.getElementById("nameToAdd").addEventListener("keydown", (e) => { if (e.key === "Enter") addPerson(); });
+  listEl.querySelectorAll("[data-remove]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.remove;
+      data.roster = data.roster.filter((p) => p.id !== id);
+      data.sessions = data.sessions.map((s) => ({ ...s, attendeeIds: s.attendeeIds.filter((pid) => pid !== id) }));
+      data.payments = data.payments.filter((pay) => pay.personId !== id);
+      save();
+      renderAll();
+    });
+  });
+}
+
+// ---------- Balances tab ----------
+function renderBalances() {
+  const el = document.getElementById("balances");
+  const balances = computeBalances().sort((a, b) => b.balance - a.balance);
+  if (data.roster.length === 0) {
+    el.innerHTML = emptyState("No balances yet", "Add members and mark attendance to see who owes what.");
+    return;
+  }
+  const totalOutstanding = balances.reduce((sum, p) => sum + Math.max(p.balance, 0), 0);
+  el.innerHTML = `
+    <div class="balance-total">
+      <span class="muted" style="font-size:14px">Total outstanding</span>
+      <span class="amt">${money(totalOutstanding)}</span>
+    </div>
+    <button class="btn-outline" id="exportBalancesBtn">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export balances (CSV)
+    </button>
+    <div class="list" style="margin-top:14px">
+      ${balances.map((p) => `
+        <div>
+          <div class="list-item">
+            <div>
+              <div class="bal-name">${esc(p.name)}</div>
+              <div class="bal-sub">${p.sessionsAttended} session${p.sessionsAttended === 1 ? "" : "s"} · owed ${money(p.owed)} · paid ${money(p.paid)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="bal-amt ${p.balance > 0 ? "pos" : "zero"}">${money(p.balance)}</span>
+              <button class="btn-small" data-pay="${p.id}" data-suggest="${p.balance > 0 ? p.balance.toFixed(2) : ""}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Record payment</button>
+            </div>
+          </div>
+          ${payingForId === p.id ? `
+            <div class="pay-row">
+              <input type="number" step="0.01" min="0" id="payAmount" value="${document.getElementById("payAmount") ? document.getElementById("payAmount").value : (p.balance > 0 ? p.balance.toFixed(2) : "")}" />
+              <button class="btn-small" id="savePayBtn">Save</button>
+              <button id="cancelPayBtn" style="background:none;border:none;color:var(--muted)">✕</button>
+            </div>` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+  document.getElementById("exportBalancesBtn").addEventListener("click", () => {
+    const rows = [["Name", "Sessions Attended", "Total Owed", "Total Paid", "Balance"],
+      ...balances.map((p) => [p.name, p.sessionsAttended, p.owed.toFixed(2), p.paid.toFixed(2), p.balance.toFixed(2)])];
+    downloadCSV(`dues-balances-${todayISO()}.csv`, rows);
+  });
+  el.querySelectorAll("[data-pay]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      payingForId = payingForId === btn.dataset.pay ? null : btn.dataset.pay;
+      renderBalances();
+      if (payingForId) document.getElementById("payAmount").focus();
+    });
+  });
+  const cancelBtn = document.getElementById("cancelPayBtn");
+  if (cancelBtn) cancelBtn.addEventListener("click", () => { payingForId = null; renderBalances(); });
+  const saveBtn = document.getElementById("savePayBtn");
+  if (saveBtn) saveBtn.addEventListener("click", () => {
+    const v = parseFloat(document.getElementById("payAmount").value);
+    if (!v || v <= 0) return;
+    data.payments.push({ id: uid(), personId: payingForId, amount: v, date: todayISO() });
+    payingForId = null;
+    save();
+    renderBalances();
+  });
+}
+
+// ---------- History tab ----------
+function renderHistory() {
+  const el = document.getElementById("history");
+  const sessions = [...data.sessions].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const nameFor = (id) => (data.roster.find((p) => p.id === id) || {}).name || "(removed)";
+  if (sessions.length === 0) {
+    el.innerHTML = emptyState("No practices logged yet", "Sessions you save from the Today tab will show up here.");
+    return;
+  }
+  el.innerHTML = `
+    <button class="btn-outline" id="exportSessionsBtn">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export session log (CSV)
+    </button>
+    <div class="list" style="margin-top:14px">
+      ${sessions.map((s) => `
+        <div>
+          <button class="session-header pressable" data-open="${s.id}" style="width:100%;background:none;border:none;color:inherit">
+            <span class="mono" style="font-size:14px;display:flex;align-items:center;gap:6px">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2">${openSessionId === s.id ? '<polyline points="6 9 12 15 18 9"/>' : '<polyline points="9 18 15 12 9 6"/>'}</svg>
+              ${s.date}
+            </span>
+            <span class="mono muted" style="font-size:12px">${s.attendeeIds.length} present · ${money(s.attendeeIds.length * s.fee)}</span>
+          </button>
+          ${openSessionId === s.id ? `
+            <div class="session-detail">
+              <div class="chips">
+                ${s.attendeeIds.length === 0 ? `<span class="muted" style="font-size:12px">No one marked present</span>` : s.attendeeIds.map((pid) => `<span class="chip">${esc(nameFor(pid))}</span>`).join("")}
+              </div>
+              <div style="padding:0 16px 12px">
+                <button class="btn-text-danger" data-delete="${s.id}">
+                  <svg class="icon" style="width:12px;height:12px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                  Delete this session
+                </button>
+              </div>
+            </div>` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+  document.getElementById("exportSessionsBtn").addEventListener("click", () => {
+    const rows = [["Date", "Fee", "Attendee Count", "Total Collected", "Attendees"],
+      ...sessions.map((s) => [s.date, s.fee.toFixed(2), s.attendeeIds.length, (s.attendeeIds.length * s.fee).toFixed(2), s.attendeeIds.map(nameFor).join("; ")])];
+    downloadCSV(`session-log-${todayISO()}.csv`, rows);
+  });
+  el.querySelectorAll("[data-open]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openSessionId = openSessionId === btn.dataset.open ? null : btn.dataset.open;
+      renderHistory();
+    });
+  });
+  el.querySelectorAll("[data-delete]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      data.sessions = data.sessions.filter((s) => s.id !== btn.dataset.delete);
+      openSessionId = null;
+      save();
+      renderHistory();
+      renderBalances();
+    });
+  });
+}
+
+// ---------- Main render ----------
+function renderAll() {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll(".section").forEach((s) => s.classList.toggle("active", s.id === tab));
+  renderHeader();
+  renderPractice();
+  renderRoster();
+  renderBalances();
+  renderHistory();
+}
+
+renderAll();
+</script>
+</body>
+</html>
