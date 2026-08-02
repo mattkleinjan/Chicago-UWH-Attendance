@@ -51,13 +51,7 @@
   .title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
   h1 {
     font-size: 34px; font-weight: 800; letter-spacing: 0.005em; color: var(--text-bright);
-    margin: 0; cursor: pointer; border-bottom: 1px dashed transparent;
-  }
-  h1:active { border-color: var(--border-strong); }
-  #nameInput {
-    font-size: 30px; font-weight: 800; color: var(--text-bright); background: var(--surface);
-    border: 1px solid var(--border-strong); border-radius: 6px; padding: 4px 8px;
-    font-family: inherit; width: 100%;
+    margin: 0;
   }
   .fee-row { display: flex; align-items: center; gap: 6px; font-size: 14px; }
   .fee-row span.label { color: var(--muted); }
@@ -167,11 +161,13 @@
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0"/><path d="M2 18c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0"/></svg>
           <span>Attendance &amp; Dues</span>
         </div>
-        <div class="synced-note" id="syncNote">Connecting…</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <button id="adminToggle" style="background:none;border:none;color:var(--muted);font-size:11px;display:flex;align-items:center;gap:4px;padding:0;text-decoration:underline;text-decoration-style:dashed"></button>
+          <div class="synced-note" id="syncNote">Connecting…</div>
+        </div>
       </div>
       <div class="title-row">
         <h1 id="titleEl"></h1>
-        <input id="nameInput" style="display:none" />
         <div style="display:flex;gap:16px;flex-wrap:wrap">
           <div class="fee-row">
             <span class="label">Fee / session</span>
@@ -344,8 +340,10 @@ function downloadCSV(filename, rows) {
 
 function computeBalances() {
   const map = {};
-  data.roster.forEach((p) => { map[p.id] = { id: p.id, name: p.name, isStudent: !!p.isStudent, sessionsAttended: 0, sessionsOwed: 0, chargesOwed: 0, owed: 0, paid: 0 }; });
+  const currentYear = new Date().getFullYear();
+  data.roster.forEach((p) => { map[p.id] = { id: p.id, name: p.name, isStudent: !!p.isStudent, sessionsAttended: 0, sessionsThisYear: 0, sessionsOwed: 0, chargesOwed: 0, owed: 0, paid: 0 }; });
   data.sessions.forEach((s) => {
+    const inCurrentYear = typeof s.date === "string" && s.date.slice(0, 4) === String(currentYear);
     s.attendeeIds.forEach((pid) => {
       const person = map[pid];
       if (person) {
@@ -353,6 +351,7 @@ function computeBalances() {
         person.sessionsAttended += 1;
         person.sessionsOwed += rate;
         person.owed += rate;
+        if (inCurrentYear) person.sessionsThisYear += 1;
       }
     });
   });
@@ -366,30 +365,28 @@ function computeBalances() {
 // ---------- Header ----------
 function renderHeader() {
   document.getElementById("titleEl").textContent = data.clubName;
-  document.getElementById("feeDisplay").textContent = money(data.fee);
-  document.getElementById("studentFeeDisplay").textContent = money(data.studentFee);
+  const feeDisp = document.getElementById("feeDisplay");
+  const studentFeeDisp = document.getElementById("studentFeeDisplay");
+  feeDisp.textContent = money(data.fee);
+  studentFeeDisp.textContent = money(data.studentFee);
+  feeDisp.disabled = !isUnlocked;
+  studentFeeDisp.disabled = !isUnlocked;
+  feeDisp.style.cursor = isUnlocked ? "pointer" : "default";
+  studentFeeDisp.style.cursor = isUnlocked ? "pointer" : "default";
+  feeDisp.style.borderBottomColor = isUnlocked ? "" : "transparent";
+  studentFeeDisp.style.borderBottomColor = isUnlocked ? "" : "transparent";
+  document.getElementById("adminToggle").textContent = isUnlocked ? "Admin unlocked · Lock" : "Unlock admin features";
 }
 
-document.getElementById("titleEl").addEventListener("click", () => {
-  const input = document.getElementById("nameInput");
-  const title = document.getElementById("titleEl");
-  input.value = data.clubName;
-  title.style.display = "none";
-  input.style.display = "block";
-  input.focus();
-  input.select();
+document.getElementById("adminToggle").addEventListener("click", () => {
+  if (isUnlocked) {
+    isUnlocked = false;
+    localStorage.removeItem(UNLOCK_KEY);
+    renderAll();
+  } else {
+    requireUnlock(() => {});
+  }
 });
-function commitName() {
-  const input = document.getElementById("nameInput");
-  const title = document.getElementById("titleEl");
-  const v = input.value.trim();
-  if (v) { data.clubName = v; save(); }
-  input.style.display = "none";
-  title.style.display = "block";
-  renderHeader();
-}
-document.getElementById("nameInput").addEventListener("blur", commitName);
-document.getElementById("nameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") commitName(); });
 
 document.getElementById("feeDisplay").addEventListener("click", () => {
   requireUnlock(() => {
@@ -520,6 +517,17 @@ function renderRoster() {
       <button id="addPersonBtn">+ Add</button>
     </div>
     <div id="rosterList"></div>
+    ${isUnlocked ? `
+    <div style="margin-top:26px;padding-top:18px;border-top:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:600;color:var(--text-bright);margin-bottom:4px">Bulk import past attendance</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        One practice per line: <span class="mono">YYYY-MM-DD: Name, Name, Name</span>. Names must match the roster (not case-sensitive). Existing dates get merged, not duplicated. Historical sessions use today's fee amounts.
+      </div>
+      <textarea id="importText" rows="6" placeholder="2026-01-05: Alex, Priya, Matt
+2026-01-12: Sam, Matt" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--text);font-family:ui-monospace,monospace;resize:vertical"></textarea>
+      <button class="btn-small" id="importBtn" style="margin-top:10px">Import</button>
+      <div id="importResult" style="font-size:12px;margin-top:10px;white-space:pre-wrap"></div>
+    </div>` : ""}
   `;
   const listEl = document.getElementById("rosterList");
   if (data.roster.length === 0) {
@@ -535,7 +543,7 @@ function renderRoster() {
           <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)">
             <input type="checkbox" data-student="${p.id}" ${p.isStudent ? "checked" : ""} style="width:15px;height:15px" /> Student
           </label>
-          <button data-remove="${p.id}" style="background:none;border:none;color:var(--muted)">
+          <button data-remove="${p.id}" style="background:none;border:none;color:var(--muted);${isUnlocked ? "" : "display:none"}">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
           </button>
         </span>
@@ -578,6 +586,55 @@ function renderRoster() {
       renderAll();
     }));
   });
+  const importBtn = document.getElementById("importBtn");
+  if (importBtn) importBtn.addEventListener("click", () => {
+    const text = document.getElementById("importText").value;
+    const resultEl = document.getElementById("importResult");
+    const nameMap = {};
+    data.roster.forEach((p) => { nameMap[p.name.trim().toLowerCase()] = p.id; });
+
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    let sessionsCreated = 0, sessionsMerged = 0, attendeesAdded = 0;
+    const unmatched = new Set();
+    const badLines = [];
+
+    lines.forEach((line) => {
+      const colonIdx = line.indexOf(":");
+      if (colonIdx === -1) { badLines.push(line); return; }
+      const datePart = line.slice(0, colonIdx).trim();
+      const namesPart = line.slice(colonIdx + 1);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) { badLines.push(line); return; }
+      const names = namesPart.split(",").map((n) => n.trim()).filter(Boolean);
+      const ids = [];
+      names.forEach((n) => {
+        const id = nameMap[n.toLowerCase()];
+        if (id) ids.push(id); else unmatched.add(n);
+      });
+      if (ids.length === 0 && names.length > 0) return;
+
+      const existing = data.sessions.find((s) => s.date === datePart);
+      if (existing) {
+        const before = existing.attendeeIds.length;
+        const merged = Array.from(new Set([...existing.attendeeIds, ...ids]));
+        attendeesAdded += merged.length - before;
+        existing.attendeeIds = merged;
+        sessionsMerged += 1;
+      } else {
+        data.sessions.push({ id: uid(), date: datePart, fee: data.fee, studentFee: data.studentFee, attendeeIds: ids });
+        sessionsCreated += 1;
+        attendeesAdded += ids.length;
+      }
+    });
+
+    if (sessionsCreated > 0 || sessionsMerged > 0) { save(); renderHistory(); renderBalances(); }
+
+    const parts = [];
+    parts.push(`${sessionsCreated} new session${sessionsCreated === 1 ? "" : "s"} created, ${sessionsMerged} existing date${sessionsMerged === 1 ? "" : "s"} updated (${attendeesAdded} attendee entries added).`);
+    if (unmatched.size > 0) parts.push(`Not found on roster (skipped): ${Array.from(unmatched).join(", ")}`);
+    if (badLines.length > 0) parts.push(`Couldn't parse ${badLines.length} line(s) — check the YYYY-MM-DD format: ${badLines.join(" | ")}`);
+    resultEl.textContent = parts.join("\n");
+    resultEl.style.color = (unmatched.size > 0 || badLines.length > 0) ? "var(--owed)" : "var(--accent)";
+  });
 }
 
 // ---------- Balances tab ----------
@@ -594,10 +651,11 @@ function renderBalances() {
       <span class="muted" style="font-size:14px">Total outstanding</span>
       <span class="amt">${money(totalOutstanding)}</span>
     </div>
+    ${isUnlocked ? `
     <button class="btn-outline" id="exportBalancesBtn">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Export balances (CSV)
-    </button>
+    </button>` : ""}
     <div class="list" style="margin-top:14px">
       ${balances.map((p) => `
         <div>
@@ -605,11 +663,13 @@ function renderBalances() {
             <div>
               <div class="bal-name">${esc(p.name)}${p.isStudent ? ' <span class="chip" style="background:var(--surface-hover);color:var(--accent)">Student</span>' : ''}</div>
               <div class="bal-sub">${p.sessionsAttended} session${p.sessionsAttended === 1 ? "" : "s"} · sessions ${money(p.sessionsOwed)}${p.chargesOwed ? " · other charges " + money(p.chargesOwed) : ""} · paid ${money(p.paid)}</div>
+              <div class="bal-sub" style="margin-top:2px;color:var(--muted-2)">${p.sessionsThisYear} practice${p.sessionsThisYear === 1 ? "" : "s"} attended in ${new Date().getFullYear()}</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
               <span class="bal-amt ${p.balance > 0 ? "pos" : "zero"}">${money(p.balance)}</span>
+              ${isUnlocked ? `
               <button class="btn-small" data-charge="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Add charge</button>
-              <button class="btn-small" data-pay="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Record payment</button>
+              <button class="btn-small" data-pay="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Record payment</button>` : ""}
             </div>
           </div>
           ${payingForId === p.id ? `
@@ -629,12 +689,11 @@ function renderBalances() {
       `).join("")}
     </div>
   `;
-  document.getElementById("exportBalancesBtn").addEventListener("click", () => {
-    requireUnlock(() => {
-      const rows = [["Name", "Student", "Sessions Attended", "Sessions Owed", "Other Charges", "Total Paid", "Balance"],
-        ...balances.map((p) => [p.name, p.isStudent ? "Yes" : "No", p.sessionsAttended, p.sessionsOwed.toFixed(2), p.chargesOwed.toFixed(2), p.paid.toFixed(2), p.balance.toFixed(2)])];
-      downloadCSV(`dues-balances-${todayISO()}.csv`, rows);
-    });
+  const exportBalancesBtn = document.getElementById("exportBalancesBtn");
+  if (exportBalancesBtn) exportBalancesBtn.addEventListener("click", () => {
+    const rows = [["Name", "Student", "Sessions Attended", `Sessions Attended (${new Date().getFullYear()})`, "Sessions Owed", "Other Charges", "Total Paid", "Balance"],
+      ...balances.map((p) => [p.name, p.isStudent ? "Yes" : "No", p.sessionsAttended, p.sessionsThisYear, p.sessionsOwed.toFixed(2), p.chargesOwed.toFixed(2), p.paid.toFixed(2), p.balance.toFixed(2)])];
+    downloadCSV(`dues-balances-${todayISO()}.csv`, rows);
   });
   el.querySelectorAll("[data-pay]").forEach((btn) => {
     btn.addEventListener("click", () => requireUnlock(() => {
@@ -688,10 +747,11 @@ function renderHistory() {
     return;
   }
   el.innerHTML = `
+    ${isUnlocked ? `
     <button class="btn-outline" id="exportSessionsBtn">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Export session log (CSV)
-    </button>
+    </button>` : ""}
     <div class="list" style="margin-top:14px">
       ${sessions.map((s) => `
         <div>
@@ -707,23 +767,23 @@ function renderHistory() {
               <div class="chips">
                 ${s.attendeeIds.length === 0 ? `<span class="muted" style="font-size:12px">No one marked present</span>` : s.attendeeIds.map((pid) => `<span class="chip">${esc(nameFor(pid))}</span>`).join("")}
               </div>
+              ${isUnlocked ? `
               <div style="padding:0 16px 12px">
                 <button class="btn-text-danger" data-delete="${s.id}">
                   <svg class="icon" style="width:12px;height:12px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
                   Delete this session
                 </button>
-              </div>
+              </div>` : ""}
             </div>` : ""}
         </div>
       `).join("")}
     </div>
   `;
-  document.getElementById("exportSessionsBtn").addEventListener("click", () => {
-    requireUnlock(() => {
-      const rows = [["Date", "Fee", "Attendee Count", "Total Collected", "Attendees"],
-        ...sessions.map((s) => [s.date, s.fee.toFixed(2), s.attendeeIds.length, (s.attendeeIds.length * s.fee).toFixed(2), s.attendeeIds.map(nameFor).join("; ")])];
-      downloadCSV(`session-log-${todayISO()}.csv`, rows);
-    });
+  const exportSessionsBtn = document.getElementById("exportSessionsBtn");
+  if (exportSessionsBtn) exportSessionsBtn.addEventListener("click", () => {
+    const rows = [["Date", "Fee", "Attendee Count", "Total Collected", "Attendees"],
+      ...sessions.map((s) => [s.date, s.fee.toFixed(2), s.attendeeIds.length, (s.attendeeIds.length * s.fee).toFixed(2), s.attendeeIds.map(nameFor).join("; ")])];
+    downloadCSV(`session-log-${todayISO()}.csv`, rows);
   });
   el.querySelectorAll("[data-open]").forEach((btn) => {
     btn.addEventListener("click", () => {
