@@ -134,6 +134,27 @@
 
   #errorBanner { display: none; background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--owed); font-size: 13px; border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
 
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    align-items: center; justify-content: center; z-index: 50; padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-card {
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px;
+    padding: 22px; width: 100%; max-width: 320px;
+  }
+  .modal-card h3 { margin: 0 0 4px; font-size: 17px; color: var(--text-bright); }
+  .modal-card p { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+  .modal-card input { width: 100%; margin-bottom: 10px; }
+  .modal-error { color: var(--owed); font-size: 12px; min-height: 16px; margin: -4px 0 8px; }
+  .modal-actions { display: flex; gap: 8px; }
+  .modal-actions .btn { margin-top: 0; width: auto; flex: 1; }
+  .modal-actions .btn-cancel {
+    background: none; border: 1px solid var(--border-strong); color: var(--muted-2);
+    border-radius: 8px; padding: 13px; font-size: 15px; flex: 1;
+  }
+  .lock-icon { display: inline-flex; vertical-align: -2px; margin-right: 4px; }
+
   svg.icon { width: 15px; height: 15px; }
 </style>
 </head>
@@ -169,6 +190,19 @@
   </header>
 
   <div id="errorBanner"></div>
+
+  <div class="modal-backdrop" id="unlockModal">
+    <div class="modal-card">
+      <h3>Enter club passcode</h3>
+      <p>Needed for payments, roster edits, fees, and exports.</p>
+      <input type="password" id="passcodeInput" placeholder="Passcode" autocomplete="off" />
+      <div class="modal-error" id="passcodeError"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="passcodeCancel">Cancel</button>
+        <button class="btn" id="passcodeSubmit">Unlock</button>
+      </div>
+    </div>
+  </div>
 
   <nav>
     <div class="tabs">
@@ -252,6 +286,48 @@ dbRef.once("value").catch(() => {
   b.style.display = "block";
 });
 
+// ---------- Passcode gate ----------
+// EDIT THIS before deploying — pick your own club passcode. This is a soft
+// UI gate, not real security (see conversation notes), but keeps casual
+// mistakes and snooping out.
+const PASSCODE = "snorkel1";
+const UNLOCK_KEY = "uhc-unlocked-v1";
+let isUnlocked = localStorage.getItem(UNLOCK_KEY) === "1";
+let pendingUnlockAction = null;
+
+function requireUnlock(action) {
+  if (isUnlocked) { action(); return; }
+  pendingUnlockAction = action;
+  document.getElementById("passcodeError").textContent = "";
+  document.getElementById("passcodeInput").value = "";
+  document.getElementById("unlockModal").classList.add("open");
+  document.getElementById("passcodeInput").focus();
+}
+
+function closeUnlockModal() {
+  document.getElementById("unlockModal").classList.remove("open");
+  pendingUnlockAction = null;
+}
+
+function submitPasscode() {
+  const val = document.getElementById("passcodeInput").value;
+  if (val === PASSCODE) {
+    isUnlocked = true;
+    localStorage.setItem(UNLOCK_KEY, "1");
+    const action = pendingUnlockAction;
+    closeUnlockModal();
+    if (action) action();
+    renderAll();
+  } else {
+    document.getElementById("passcodeError").textContent = "Incorrect passcode.";
+  }
+}
+
+document.getElementById("passcodeSubmit").addEventListener("click", submitPasscode);
+document.getElementById("passcodeCancel").addEventListener("click", closeUnlockModal);
+document.getElementById("passcodeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") submitPasscode(); });
+document.getElementById("unlockModal").addEventListener("click", (e) => { if (e.target.id === "unlockModal") closeUnlockModal(); });
+
 function downloadCSV(filename, rows) {
   const escCsv = (v) => {
     const s = String(v ?? "");
@@ -316,13 +392,15 @@ document.getElementById("nameInput").addEventListener("blur", commitName);
 document.getElementById("nameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") commitName(); });
 
 document.getElementById("feeDisplay").addEventListener("click", () => {
-  const input = document.getElementById("feeInput");
-  const disp = document.getElementById("feeDisplay");
-  input.value = data.fee;
-  disp.style.display = "none";
-  input.style.display = "block";
-  input.focus();
-  input.select();
+  requireUnlock(() => {
+    const input = document.getElementById("feeInput");
+    const disp = document.getElementById("feeDisplay");
+    input.value = data.fee;
+    disp.style.display = "none";
+    input.style.display = "block";
+    input.focus();
+    input.select();
+  });
 });
 function commitFee() {
   const input = document.getElementById("feeInput");
@@ -337,13 +415,15 @@ document.getElementById("feeInput").addEventListener("blur", commitFee);
 document.getElementById("feeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") commitFee(); });
 
 document.getElementById("studentFeeDisplay").addEventListener("click", () => {
-  const input = document.getElementById("studentFeeInput");
-  const disp = document.getElementById("studentFeeDisplay");
-  input.value = data.studentFee;
-  disp.style.display = "none";
-  input.style.display = "block";
-  input.focus();
-  input.select();
+  requireUnlock(() => {
+    const input = document.getElementById("studentFeeInput");
+    const disp = document.getElementById("studentFeeDisplay");
+    input.value = data.studentFee;
+    disp.style.display = "none";
+    input.style.display = "block";
+    input.focus();
+    input.select();
+  });
 });
 function commitStudentFee() {
   const input = document.getElementById("studentFeeInput");
@@ -471,19 +551,24 @@ function renderRoster() {
     initPracticeChecks();
     renderAll();
   };
-  document.getElementById("addPersonBtn").addEventListener("click", addPerson);
-  document.getElementById("nameToAdd").addEventListener("keydown", (e) => { if (e.key === "Enter") addPerson(); });
+  document.getElementById("addPersonBtn").addEventListener("click", () => requireUnlock(addPerson));
+  document.getElementById("nameToAdd").addEventListener("keydown", (e) => { if (e.key === "Enter") requireUnlock(addPerson); });
   listEl.querySelectorAll("[data-student]").forEach((cb) => {
     cb.addEventListener("change", () => {
       const id = cb.dataset.student;
-      data.roster = data.roster.map((p) => p.id === id ? { ...p, isStudent: cb.checked } : p);
-      save();
-      renderRoster();
-      renderBalances();
+      const newVal = cb.checked;
+      const apply = () => {
+        data.roster = data.roster.map((p) => p.id === id ? { ...p, isStudent: newVal } : p);
+        save();
+        renderRoster();
+        renderBalances();
+      };
+      if (!isUnlocked) { cb.checked = !newVal; requireUnlock(apply); return; }
+      apply();
     });
   });
   listEl.querySelectorAll("[data-remove]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", () => requireUnlock(() => {
       const id = btn.dataset.remove;
       data.roster = data.roster.filter((p) => p.id !== id);
       data.sessions = data.sessions.map((s) => ({ ...s, attendeeIds: s.attendeeIds.filter((pid) => pid !== id) }));
@@ -491,7 +576,7 @@ function renderRoster() {
       data.charges = data.charges.filter((c) => c.personId !== id);
       save();
       renderAll();
-    });
+    }));
   });
 }
 
@@ -545,25 +630,27 @@ function renderBalances() {
     </div>
   `;
   document.getElementById("exportBalancesBtn").addEventListener("click", () => {
-    const rows = [["Name", "Student", "Sessions Attended", "Sessions Owed", "Other Charges", "Total Paid", "Balance"],
-      ...balances.map((p) => [p.name, p.isStudent ? "Yes" : "No", p.sessionsAttended, p.sessionsOwed.toFixed(2), p.chargesOwed.toFixed(2), p.paid.toFixed(2), p.balance.toFixed(2)])];
-    downloadCSV(`dues-balances-${todayISO()}.csv`, rows);
+    requireUnlock(() => {
+      const rows = [["Name", "Student", "Sessions Attended", "Sessions Owed", "Other Charges", "Total Paid", "Balance"],
+        ...balances.map((p) => [p.name, p.isStudent ? "Yes" : "No", p.sessionsAttended, p.sessionsOwed.toFixed(2), p.chargesOwed.toFixed(2), p.paid.toFixed(2), p.balance.toFixed(2)])];
+      downloadCSV(`dues-balances-${todayISO()}.csv`, rows);
+    });
   });
   el.querySelectorAll("[data-pay]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", () => requireUnlock(() => {
       chargingForId = null;
       payingForId = payingForId === btn.dataset.pay ? null : btn.dataset.pay;
       renderBalances();
       if (payingForId) document.getElementById("payAmount").focus();
-    });
+    }));
   });
   el.querySelectorAll("[data-charge]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", () => requireUnlock(() => {
       payingForId = null;
       chargingForId = chargingForId === btn.dataset.charge ? null : btn.dataset.charge;
       renderBalances();
       if (chargingForId) document.getElementById("chargeDesc").focus();
-    });
+    }));
   });
   const cancelBtn = document.getElementById("cancelPayBtn");
   if (cancelBtn) cancelBtn.addEventListener("click", () => { payingForId = null; renderBalances(); });
@@ -632,9 +719,11 @@ function renderHistory() {
     </div>
   `;
   document.getElementById("exportSessionsBtn").addEventListener("click", () => {
-    const rows = [["Date", "Fee", "Attendee Count", "Total Collected", "Attendees"],
-      ...sessions.map((s) => [s.date, s.fee.toFixed(2), s.attendeeIds.length, (s.attendeeIds.length * s.fee).toFixed(2), s.attendeeIds.map(nameFor).join("; ")])];
-    downloadCSV(`session-log-${todayISO()}.csv`, rows);
+    requireUnlock(() => {
+      const rows = [["Date", "Fee", "Attendee Count", "Total Collected", "Attendees"],
+        ...sessions.map((s) => [s.date, s.fee.toFixed(2), s.attendeeIds.length, (s.attendeeIds.length * s.fee).toFixed(2), s.attendeeIds.map(nameFor).join("; ")])];
+      downloadCSV(`session-log-${todayISO()}.csv`, rows);
+    });
   });
   el.querySelectorAll("[data-open]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -643,13 +732,13 @@ function renderHistory() {
     });
   });
   el.querySelectorAll("[data-delete]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", () => requireUnlock(() => {
       data.sessions = data.sessions.filter((s) => s.id !== btn.dataset.delete);
       openSessionId = null;
       save();
       renderHistory();
       renderBalances();
-    });
+    }));
   });
 }
 
