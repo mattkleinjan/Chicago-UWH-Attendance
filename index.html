@@ -189,6 +189,14 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const money = (n) => (n < 0 ? "-$" : "$") + Math.abs(n).toFixed(2);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+const defaultState = {
+  clubName: "Chicago UWH",
+  fee: 5,
+  roster: [],
+  sessions: [],
+  payments: [],
+};
+
 const firebaseConfig = {
   apiKey: "AIzaSyAGt8iFsrESVBcHKjR7atXwldslCk6WIh8",
   authDomain: "chicago-uwh-attendance.firebaseapp.com",
