@@ -61,8 +61,8 @@
   }
   .fee-row { display: flex; align-items: center; gap: 6px; font-size: 14px; }
   .fee-row span.label { color: var(--muted); }
-  #feeDisplay { font-family: ui-monospace, monospace; color: var(--accent); border-bottom: 1px dashed var(--border-strong); background: none; border-top: none; border-left: none; border-right: none; padding: 0; }
-  #feeInput { width: 70px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 4px; padding: 4px 6px; color: var(--accent); font-family: ui-monospace, monospace; }
+  #feeDisplay, #studentFeeDisplay { font-family: ui-monospace, monospace; color: var(--accent); border-bottom: 1px dashed var(--border-strong); background: none; border-top: none; border-left: none; border-right: none; padding: 0; }
+  #feeInput, #studentFeeInput { width: 70px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 4px; padding: 4px 6px; color: var(--accent); font-family: ui-monospace, monospace; }
   .wave { width: 100%; height: 16px; color: var(--border); display: block; }
 
   nav { margin-top: 18px; }
@@ -90,7 +90,7 @@
   .list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-top: 14px; }
   .list-item { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .list-item:last-child { border-bottom: none; }
-  .list-item.pressable { width: 100%; text-align: left; border: none; }
+  .list-item.pressable { width: 100%; text-align: left; border: none; color: var(--text); font: inherit; }
 
   .check { width: 24px; height: 24px; border-radius: 999px; border: 2px solid var(--border-strong); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .check.on { background: var(--accent); border-color: var(--accent); }
@@ -151,10 +151,17 @@
       <div class="title-row">
         <h1 id="titleEl"></h1>
         <input id="nameInput" style="display:none" />
-        <div class="fee-row">
-          <span class="label">Fee / session</span>
-          <button id="feeDisplay"></button>
-          <input id="feeInput" type="number" step="0.5" min="0" style="display:none" />
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <div class="fee-row">
+            <span class="label">Fee / session</span>
+            <button id="feeDisplay"></button>
+            <input id="feeInput" type="number" step="0.5" min="0" style="display:none" />
+          </div>
+          <div class="fee-row">
+            <span class="label">Student fee</span>
+            <button id="studentFeeDisplay"></button>
+            <input id="studentFeeInput" type="number" step="0.5" min="0" style="display:none" />
+          </div>
         </div>
       </div>
     </div>
@@ -192,9 +199,11 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':
 const defaultState = {
   clubName: "Chicago UWH",
   fee: 5,
+  studentFee: 3,
   roster: [],
   sessions: [],
   payments: [],
+  charges: [],
 };
 
 const firebaseConfig = {
@@ -213,6 +222,7 @@ let data = { ...defaultState };
 let tab = "practice";
 let openSessionId = null;
 let payingForId = null;
+let chargingForId = null;
 let connected = false;
 let suppressNextRemoteRender = false;
 
@@ -258,11 +268,20 @@ function downloadCSV(filename, rows) {
 
 function computeBalances() {
   const map = {};
-  data.roster.forEach((p) => { map[p.id] = { id: p.id, name: p.name, sessionsAttended: 0, owed: 0, paid: 0 }; });
+  data.roster.forEach((p) => { map[p.id] = { id: p.id, name: p.name, isStudent: !!p.isStudent, sessionsAttended: 0, sessionsOwed: 0, chargesOwed: 0, owed: 0, paid: 0 }; });
   data.sessions.forEach((s) => {
     s.attendeeIds.forEach((pid) => {
-      if (map[pid]) { map[pid].sessionsAttended += 1; map[pid].owed += s.fee; }
+      const person = map[pid];
+      if (person) {
+        const rate = person.isStudent && s.studentFee != null ? s.studentFee : s.fee;
+        person.sessionsAttended += 1;
+        person.sessionsOwed += rate;
+        person.owed += rate;
+      }
     });
+  });
+  (data.charges || []).forEach((c) => {
+    if (map[c.personId]) { map[c.personId].chargesOwed += c.amount; map[c.personId].owed += c.amount; }
   });
   data.payments.forEach((pay) => { if (map[pay.personId]) map[pay.personId].paid += pay.amount; });
   return Object.values(map).map((p) => ({ ...p, balance: p.owed - p.paid }));
@@ -272,6 +291,7 @@ function computeBalances() {
 function renderHeader() {
   document.getElementById("titleEl").textContent = data.clubName;
   document.getElementById("feeDisplay").textContent = money(data.fee);
+  document.getElementById("studentFeeDisplay").textContent = money(data.studentFee);
 }
 
 document.getElementById("titleEl").addEventListener("click", () => {
@@ -315,6 +335,27 @@ function commitFee() {
 }
 document.getElementById("feeInput").addEventListener("blur", commitFee);
 document.getElementById("feeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") commitFee(); });
+
+document.getElementById("studentFeeDisplay").addEventListener("click", () => {
+  const input = document.getElementById("studentFeeInput");
+  const disp = document.getElementById("studentFeeDisplay");
+  input.value = data.studentFee;
+  disp.style.display = "none";
+  input.style.display = "block";
+  input.focus();
+  input.select();
+});
+function commitStudentFee() {
+  const input = document.getElementById("studentFeeInput");
+  const disp = document.getElementById("studentFeeDisplay");
+  const v = parseFloat(input.value);
+  if (!isNaN(v) && v >= 0) { data.studentFee = v; save(); }
+  input.style.display = "none";
+  disp.style.display = "block";
+  renderHeader();
+}
+document.getElementById("studentFeeInput").addEventListener("blur", commitStudentFee);
+document.getElementById("studentFeeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") commitStudentFee(); });
 
 // ---------- Tabs ----------
 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -379,7 +420,7 @@ function renderPractice() {
     const attendeeIds = Array.from(checkedIds);
     const idx = data.sessions.findIndex((s) => s.date === practiceDate);
     if (idx >= 0) data.sessions[idx].attendeeIds = attendeeIds;
-    else data.sessions.push({ id: uid(), date: practiceDate, fee: data.fee, attendeeIds });
+    else data.sessions.push({ id: uid(), date: practiceDate, fee: data.fee, studentFee: data.studentFee, attendeeIds });
     save();
     renderPractice();
     renderBalances();
@@ -393,6 +434,9 @@ function renderRoster() {
   el.innerHTML = `
     <div class="add-row">
       <input type="text" id="nameToAdd" placeholder="Add a member's name" />
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted-2);white-space:nowrap">
+        <input type="checkbox" id="studentToAdd" style="width:16px;height:16px" /> Student
+      </label>
       <button id="addPersonBtn">+ Add</button>
     </div>
     <div id="rosterList"></div>
@@ -403,29 +447,48 @@ function renderRoster() {
   } else {
     listEl.innerHTML = `<div class="list">${data.roster.map((p) => `
       <div class="list-item">
-        <span>${esc(p.name)}</span>
-        <button data-remove="${p.id}" style="background:none;border:none;color:var(--muted)">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-        </button>
+        <span style="display:flex;align-items:center;gap:8px">
+          ${esc(p.name)}
+          ${p.isStudent ? '<span class="chip" style="background:var(--surface-hover);color:var(--accent)">Student</span>' : ''}
+        </span>
+        <span style="display:flex;align-items:center;gap:14px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)">
+            <input type="checkbox" data-student="${p.id}" ${p.isStudent ? "checked" : ""} style="width:15px;height:15px" /> Student
+          </label>
+          <button data-remove="${p.id}" style="background:none;border:none;color:var(--muted)">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          </button>
+        </span>
       </div>`).join("")}</div>`;
   }
   const addPerson = () => {
     const input = document.getElementById("nameToAdd");
+    const isStudent = document.getElementById("studentToAdd").checked;
     const name = input.value.trim();
     if (!name) return;
-    data.roster.push({ id: uid(), name });
+    data.roster.push({ id: uid(), name, isStudent });
     save();
     initPracticeChecks();
     renderAll();
   };
   document.getElementById("addPersonBtn").addEventListener("click", addPerson);
   document.getElementById("nameToAdd").addEventListener("keydown", (e) => { if (e.key === "Enter") addPerson(); });
+  listEl.querySelectorAll("[data-student]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const id = cb.dataset.student;
+      data.roster = data.roster.map((p) => p.id === id ? { ...p, isStudent: cb.checked } : p);
+      save();
+      renderRoster();
+      renderBalances();
+    });
+  });
   listEl.querySelectorAll("[data-remove]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.remove;
       data.roster = data.roster.filter((p) => p.id !== id);
       data.sessions = data.sessions.map((s) => ({ ...s, attendeeIds: s.attendeeIds.filter((pid) => pid !== id) }));
       data.payments = data.payments.filter((pay) => pay.personId !== id);
+      data.charges = data.charges.filter((c) => c.personId !== id);
       save();
       renderAll();
     });
@@ -455,34 +518,51 @@ function renderBalances() {
         <div>
           <div class="list-item">
             <div>
-              <div class="bal-name">${esc(p.name)}</div>
-              <div class="bal-sub">${p.sessionsAttended} session${p.sessionsAttended === 1 ? "" : "s"} · owed ${money(p.owed)} · paid ${money(p.paid)}</div>
+              <div class="bal-name">${esc(p.name)}${p.isStudent ? ' <span class="chip" style="background:var(--surface-hover);color:var(--accent)">Student</span>' : ''}</div>
+              <div class="bal-sub">${p.sessionsAttended} session${p.sessionsAttended === 1 ? "" : "s"} · sessions ${money(p.sessionsOwed)}${p.chargesOwed ? " · other charges " + money(p.chargesOwed) : ""} · paid ${money(p.paid)}</div>
             </div>
-            <div style="display:flex;align-items:center;gap:10px">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
               <span class="bal-amt ${p.balance > 0 ? "pos" : "zero"}">${money(p.balance)}</span>
-              <button class="btn-small" data-pay="${p.id}" data-suggest="${p.balance > 0 ? p.balance.toFixed(2) : ""}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Record payment</button>
+              <button class="btn-small" data-charge="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Add charge</button>
+              <button class="btn-small" data-pay="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Record payment</button>
             </div>
           </div>
           ${payingForId === p.id ? `
             <div class="pay-row">
-              <input type="number" step="0.01" min="0" id="payAmount" value="${document.getElementById("payAmount") ? document.getElementById("payAmount").value : (p.balance > 0 ? p.balance.toFixed(2) : "")}" />
+              <input type="number" step="0.01" min="0" id="payAmount" placeholder="Amount" value="${document.getElementById("payAmount") ? document.getElementById("payAmount").value : (p.balance > 0 ? p.balance.toFixed(2) : "")}" />
               <button class="btn-small" id="savePayBtn">Save</button>
               <button id="cancelPayBtn" style="background:none;border:none;color:var(--muted)">✕</button>
+            </div>` : ""}
+          ${chargingForId === p.id ? `
+            <div class="pay-row">
+              <input type="text" id="chargeDesc" placeholder="e.g. Regionals tournament" style="flex:1" value="${document.getElementById("chargeDesc") ? document.getElementById("chargeDesc").value : ""}" />
+              <input type="number" step="0.01" min="0" id="chargeAmount" placeholder="Amount" style="width:90px" value="${document.getElementById("chargeAmount") ? document.getElementById("chargeAmount").value : ""}" />
+              <button class="btn-small" id="saveChargeBtn">Save</button>
+              <button id="cancelChargeBtn" style="background:none;border:none;color:var(--muted)">✕</button>
             </div>` : ""}
         </div>
       `).join("")}
     </div>
   `;
   document.getElementById("exportBalancesBtn").addEventListener("click", () => {
-    const rows = [["Name", "Sessions Attended", "Total Owed", "Total Paid", "Balance"],
-      ...balances.map((p) => [p.name, p.sessionsAttended, p.owed.toFixed(2), p.paid.toFixed(2), p.balance.toFixed(2)])];
+    const rows = [["Name", "Student", "Sessions Attended", "Sessions Owed", "Other Charges", "Total Paid", "Balance"],
+      ...balances.map((p) => [p.name, p.isStudent ? "Yes" : "No", p.sessionsAttended, p.sessionsOwed.toFixed(2), p.chargesOwed.toFixed(2), p.paid.toFixed(2), p.balance.toFixed(2)])];
     downloadCSV(`dues-balances-${todayISO()}.csv`, rows);
   });
   el.querySelectorAll("[data-pay]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      chargingForId = null;
       payingForId = payingForId === btn.dataset.pay ? null : btn.dataset.pay;
       renderBalances();
       if (payingForId) document.getElementById("payAmount").focus();
+    });
+  });
+  el.querySelectorAll("[data-charge]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      payingForId = null;
+      chargingForId = chargingForId === btn.dataset.charge ? null : btn.dataset.charge;
+      renderBalances();
+      if (chargingForId) document.getElementById("chargeDesc").focus();
     });
   });
   const cancelBtn = document.getElementById("cancelPayBtn");
@@ -493,6 +573,19 @@ function renderBalances() {
     if (!v || v <= 0) return;
     data.payments.push({ id: uid(), personId: payingForId, amount: v, date: todayISO() });
     payingForId = null;
+    save();
+    renderBalances();
+  });
+  const cancelChargeBtn = document.getElementById("cancelChargeBtn");
+  if (cancelChargeBtn) cancelChargeBtn.addEventListener("click", () => { chargingForId = null; renderBalances(); });
+  const saveChargeBtn = document.getElementById("saveChargeBtn");
+  if (saveChargeBtn) saveChargeBtn.addEventListener("click", () => {
+    const desc = document.getElementById("chargeDesc").value.trim();
+    const v = parseFloat(document.getElementById("chargeAmount").value);
+    if (!v || v <= 0) return;
+    data.charges = data.charges || [];
+    data.charges.push({ id: uid(), personId: chargingForId, description: desc || "Other charge", amount: v, date: todayISO() });
+    chargingForId = null;
     save();
     renderBalances();
   });
