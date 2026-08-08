@@ -119,7 +119,7 @@
   .bal-amt { font-family: ui-monospace, monospace; font-size: 17px; }
   .bal-amt.pos { color: var(--owed); }
   .bal-amt.zero { color: var(--accent); }
-  .pay-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px 14px; }
+  .pay-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px 14px; flex-wrap: wrap; }
   .pay-row input { width: 100px; }
 
   .chip { font-size: 12px; background: var(--surface-hover); color: var(--muted-2); border-radius: 999px; padding: 5px 10px; }
@@ -256,6 +256,9 @@ let openSessionId = null;
 let payingForId = null;
 let chargingForId = null;
 let selectedBalanceId = null;
+let detailExpandedId = null;
+let editingChargeEntryId = null;
+let editingPaymentEntryId = null;
 let connected = false;
 let suppressNextRemoteRender = false;
 
@@ -649,12 +652,19 @@ function renderRoster() {
 }
 
 // ---------- Balances tab ----------
-function renderPlayerDetail(balances) {
+let showAllCharges = false;
+let showAllPayments = false;
+
+function renderPlayerDetail() {
   const detailEl = document.getElementById("playerDetail");
   if (!detailEl) return;
   if (!selectedBalanceId) { detailEl.innerHTML = ""; return; }
-  const p = balances.find((b) => b.id === selectedBalanceId);
+  const p = computeBalances().find((b) => b.id === selectedBalanceId);
   if (!p) { detailEl.innerHTML = ""; return; }
+  const charges = (data.charges || []).filter((c) => c.personId === selectedBalanceId).sort((a, b) => a.date < b.date ? 1 : -1);
+  const payments = (data.payments || []).filter((pay) => pay.personId === selectedBalanceId).sort((a, b) => a.date < b.date ? 1 : -1);
+  const shownCharges = showAllCharges ? charges : charges.slice(0, 5);
+  const shownPayments = showAllPayments ? payments : payments.slice(0, 5);
   detailEl.innerHTML = `
     <div class="list">
       <div class="list-item" style="flex-direction:column;align-items:flex-start;gap:8px">
@@ -663,6 +673,90 @@ function renderPlayerDetail(balances) {
         <div class="bal-sub">${p.sessionsAttended} session${p.sessionsAttended === 1 ? "" : "s"} all-time · sessions owed ${money(p.sessionsOwed)}${p.chargesOwed ? " · other charges " + money(p.chargesOwed) : ""} · paid ${money(p.paid)}</div>
         <div class="bal-sub" style="color:var(--muted-2)">${p.sessionsThisYear} practice${p.sessionsThisYear === 1 ? "" : "s"} attended in ${new Date().getFullYear()}</div>
       </div>
+    </div>
+    ${charges.length > 0 ? `
+    <div style="margin-top:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--muted-2);margin-bottom:6px">Other charges</div>
+      <div class="list">
+        ${shownCharges.map((c) => `
+          <div class="list-item">
+            <span style="font-size:13px">${esc(c.description || "Other charge")} <span class="muted mono" style="font-size:11px">${c.date}</span></span>
+            <span class="mono" style="color:var(--owed)">${money(c.amount)}</span>
+          </div>
+        `).join("")}
+      </div>
+      ${charges.length > 5 ? `<button class="btn-outline" id="toggleChargesBtn" style="margin-top:8px">${showAllCharges ? "Show less" : `Show all ${charges.length}`}</button>` : ""}
+    </div>` : ""}
+    ${payments.length > 0 ? `
+    <div style="margin-top:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--muted-2);margin-bottom:6px">Payment history</div>
+      <div class="list">
+        ${shownPayments.map((pay) => `
+          <div class="list-item">
+            <span class="mono muted" style="font-size:12px">${pay.date}</span>
+            <span class="mono" style="color:var(--accent)">${money(pay.amount)}</span>
+          </div>
+        `).join("")}
+      </div>
+      ${payments.length > 5 ? `<button class="btn-outline" id="togglePaymentsBtn" style="margin-top:8px">${showAllPayments ? "Show less" : `Show all ${payments.length}`}</button>` : ""}
+    </div>` : ""}
+  `;
+  const toggleChargesBtn = document.getElementById("toggleChargesBtn");
+  if (toggleChargesBtn) toggleChargesBtn.addEventListener("click", () => { showAllCharges = !showAllCharges; renderPlayerDetail(); });
+  const togglePaymentsBtn = document.getElementById("togglePaymentsBtn");
+  if (togglePaymentsBtn) togglePaymentsBtn.addEventListener("click", () => { showAllPayments = !showAllPayments; renderPlayerDetail(); });
+}
+
+function renderPersonDetailsAdmin(personId) {
+  const charges = (data.charges || []).filter((c) => c.personId === personId).sort((a, b) => a.date < b.date ? 1 : -1);
+  const payments = (data.payments || []).filter((pay) => pay.personId === personId).sort((a, b) => a.date < b.date ? 1 : -1);
+  const trashIcon = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`;
+  const editIcon = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+  return `
+    <div style="padding:2px 16px 14px">
+      <div style="font-size:12px;font-weight:600;color:var(--muted-2);margin:10px 0 6px">Other charges</div>
+      ${charges.length === 0 ? `<div class="muted" style="font-size:12px">None</div>` : `
+      <div class="list">
+        ${charges.map((c) => editingChargeEntryId === c.id ? `
+          <div class="list-item" style="flex-wrap:wrap;gap:8px">
+            <input type="date" id="editChargeDate" value="${c.date}" style="width:140px" />
+            <input type="text" id="editChargeDesc" value="${esc(c.description || "")}" style="flex:1;min-width:120px" />
+            <input type="number" step="0.01" min="0" id="editChargeAmount" value="${c.amount}" style="width:85px" />
+            <button class="btn-small" data-save-charge="${c.id}">Save</button>
+            <button data-cancel-edit-charge style="background:none;border:none;color:var(--muted)">✕</button>
+          </div>
+        ` : `
+          <div class="list-item">
+            <span style="font-size:13px">${esc(c.description || "Other charge")} <span class="muted mono" style="font-size:11px">${c.date}</span></span>
+            <span style="display:flex;align-items:center;gap:10px">
+              <span class="mono" style="color:var(--owed)">${money(c.amount)}</span>
+              <button data-edit-charge="${c.id}" style="background:none;border:none;color:var(--muted-2)">${editIcon}</button>
+              <button data-delete-charge="${c.id}" style="background:none;border:none;color:var(--muted)">${trashIcon}</button>
+            </span>
+          </div>
+        `).join("")}
+      </div>`}
+      <div style="font-size:12px;font-weight:600;color:var(--muted-2);margin:14px 0 6px">Payment history</div>
+      ${payments.length === 0 ? `<div class="muted" style="font-size:12px">None</div>` : `
+      <div class="list">
+        ${payments.map((pay) => editingPaymentEntryId === pay.id ? `
+          <div class="list-item" style="flex-wrap:wrap;gap:8px">
+            <input type="date" id="editPaymentDate" value="${pay.date}" style="width:140px" />
+            <input type="number" step="0.01" min="0" id="editPaymentAmount" value="${pay.amount}" style="width:85px" />
+            <button class="btn-small" data-save-payment="${pay.id}">Save</button>
+            <button data-cancel-edit-payment style="background:none;border:none;color:var(--muted)">✕</button>
+          </div>
+        ` : `
+          <div class="list-item">
+            <span class="mono muted" style="font-size:12px">${pay.date}</span>
+            <span style="display:flex;align-items:center;gap:10px">
+              <span class="mono" style="color:var(--accent)">${money(pay.amount)}</span>
+              <button data-edit-payment="${pay.id}" style="background:none;border:none;color:var(--muted-2)">${editIcon}</button>
+              <button data-delete-payment="${pay.id}" style="background:none;border:none;color:var(--muted)">${trashIcon}</button>
+            </span>
+          </div>
+        `).join("")}
+      </div>`}
     </div>
   `;
 }
@@ -688,11 +782,13 @@ function renderBalances() {
     const select = document.getElementById("playerSelect");
     select.addEventListener("change", (e) => {
       selectedBalanceId = e.target.value || null;
-      renderPlayerDetail(balances);
+      showAllCharges = false;
+      showAllPayments = false;
+      renderPlayerDetail();
     });
     if (selectedBalanceId && balances.some((p) => p.id === selectedBalanceId)) {
       select.value = selectedBalanceId;
-      renderPlayerDetail(balances);
+      renderPlayerDetail();
     }
     return;
   }
@@ -723,12 +819,14 @@ function renderBalances() {
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
               <span class="bal-amt ${p.balance > 0 ? "pos" : "zero"}">${money(p.balance)}</span>
+              <button class="btn-small" data-details="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">${detailExpandedId === p.id ? "Hide details" : "See details"}</button>
               <button class="btn-small" data-charge="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Add charge</button>
               <button class="btn-small" data-pay="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Record payment</button>
             </div>
           </div>
           ${payingForId === p.id ? `
             <div class="pay-row">
+              <input type="date" id="payDate" value="${document.getElementById("payDate") ? document.getElementById("payDate").value : todayISO()}" />
               <input type="number" step="0.01" min="0" id="payAmount" placeholder="Amount" value="${document.getElementById("payAmount") ? document.getElementById("payAmount").value : (p.balance > 0 ? p.balance.toFixed(2) : "")}" />
               <button class="btn-small" id="savePayBtn">Save</button>
               <button id="cancelPayBtn" style="background:none;border:none;color:var(--muted)">✕</button>
@@ -740,6 +838,7 @@ function renderBalances() {
               <button class="btn-small" id="saveChargeBtn">Save</button>
               <button id="cancelChargeBtn" style="background:none;border:none;color:var(--muted)">✕</button>
             </div>` : ""}
+          ${detailExpandedId === p.id ? renderPersonDetailsAdmin(p.id) : ""}
         </div>
       `).join("")}
     </div>
@@ -754,6 +853,74 @@ function renderBalances() {
   if (manageRosterBtn) manageRosterBtn.addEventListener("click", () => {
     tab = "roster";
     renderAll();
+  });
+  el.querySelectorAll("[data-details]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.details;
+      detailExpandedId = detailExpandedId === id ? null : id;
+      editingChargeEntryId = null;
+      editingPaymentEntryId = null;
+      renderBalances();
+    });
+  });
+  el.querySelectorAll("[data-edit-charge]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      editingChargeEntryId = btn.dataset.editCharge;
+      renderBalances();
+    });
+  });
+  el.querySelectorAll("[data-cancel-edit-charge]").forEach((btn) => {
+    btn.addEventListener("click", () => { editingChargeEntryId = null; renderBalances(); });
+  });
+  el.querySelectorAll("[data-save-charge]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.saveCharge;
+      const dateVal = document.getElementById("editChargeDate").value;
+      const descVal = document.getElementById("editChargeDesc").value.trim();
+      const amountVal = parseFloat(document.getElementById("editChargeAmount").value);
+      if (!dateVal || !amountVal || amountVal <= 0) return;
+      data.charges = data.charges.map((c) => c.id === id ? { ...c, date: dateVal, description: descVal || "Other charge", amount: amountVal } : c);
+      editingChargeEntryId = null;
+      save();
+      renderBalances();
+    });
+  });
+  el.querySelectorAll("[data-delete-charge]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!confirm("Delete this charge? This can't be undone.")) return;
+      data.charges = data.charges.filter((c) => c.id !== btn.dataset.deleteCharge);
+      save();
+      renderBalances();
+    });
+  });
+  el.querySelectorAll("[data-edit-payment]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      editingPaymentEntryId = btn.dataset.editPayment;
+      renderBalances();
+    });
+  });
+  el.querySelectorAll("[data-cancel-edit-payment]").forEach((btn) => {
+    btn.addEventListener("click", () => { editingPaymentEntryId = null; renderBalances(); });
+  });
+  el.querySelectorAll("[data-save-payment]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.savePayment;
+      const dateVal = document.getElementById("editPaymentDate").value;
+      const amountVal = parseFloat(document.getElementById("editPaymentAmount").value);
+      if (!dateVal || !amountVal || amountVal <= 0) return;
+      data.payments = data.payments.map((pay) => pay.id === id ? { ...pay, date: dateVal, amount: amountVal } : pay);
+      editingPaymentEntryId = null;
+      save();
+      renderBalances();
+    });
+  });
+  el.querySelectorAll("[data-delete-payment]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!confirm("Delete this payment? This can't be undone.")) return;
+      data.payments = data.payments.filter((pay) => pay.id !== btn.dataset.deletePayment);
+      save();
+      renderBalances();
+    });
   });
   el.querySelectorAll("[data-pay]").forEach((btn) => {
     btn.addEventListener("click", () => requireUnlock(() => {
@@ -776,8 +943,9 @@ function renderBalances() {
   const saveBtn = document.getElementById("savePayBtn");
   if (saveBtn) saveBtn.addEventListener("click", () => {
     const v = parseFloat(document.getElementById("payAmount").value);
+    const d = document.getElementById("payDate").value || todayISO();
     if (!v || v <= 0) return;
-    data.payments.push({ id: uid(), personId: payingForId, amount: v, date: todayISO() });
+    data.payments.push({ id: uid(), personId: payingForId, amount: v, date: d });
     payingForId = null;
     save();
     renderBalances();
