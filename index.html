@@ -73,10 +73,11 @@
   .section.active { display: block; }
 
   .row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-  input[type=date], input[type=text], input[type=number] {
+  input[type=date], input[type=text], input[type=number], select {
     background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
     font-size: 15px; color: var(--text); font-family: inherit;
   }
+  select { width: 100%; -webkit-appearance: none; appearance: none; }
   input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(63,193,176,0.3); }
   .mono { font-family: ui-monospace, monospace; }
   .muted { color: var(--muted); }
@@ -204,7 +205,7 @@
     <div class="tabs">
       <button class="tab-btn" data-tab="practice">Today</button>
       <button class="tab-btn" data-tab="balances">Balances</button>
-      <button class="tab-btn" data-tab="roster">Roster</button>
+      <button class="tab-btn" data-tab="ranking">Top Attendance</button>
       <button class="tab-btn" data-tab="history">History</button>
     </div>
   </nav>
@@ -212,6 +213,7 @@
   <main>
     <section id="practice" class="section"></section>
     <section id="balances" class="section"></section>
+    <section id="ranking" class="section"></section>
     <section id="roster" class="section"></section>
     <section id="history" class="section"></section>
   </main>
@@ -253,6 +255,7 @@ let tab = "practice";
 let openSessionId = null;
 let payingForId = null;
 let chargingForId = null;
+let selectedBalanceId = null;
 let connected = false;
 let suppressNextRemoteRender = false;
 
@@ -509,6 +512,10 @@ function renderPractice() {
 function renderRoster() {
   const el = document.getElementById("roster");
   el.innerHTML = `
+    <button id="backToBalancesBtn" style="background:none;border:none;color:var(--muted);font-size:13px;display:flex;align-items:center;gap:4px;padding:0;margin-bottom:16px">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back to balances
+    </button>
     <div class="add-row">
       <input type="text" id="nameToAdd" placeholder="Add a member's name" />
       <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted-2);white-space:nowrap">
@@ -559,6 +566,10 @@ function renderRoster() {
     initPracticeChecks();
     renderAll();
   };
+  document.getElementById("backToBalancesBtn").addEventListener("click", () => {
+    tab = "balances";
+    renderAll();
+  });
   document.getElementById("addPersonBtn").addEventListener("click", () => requireUnlock(addPerson));
   document.getElementById("nameToAdd").addEventListener("keydown", (e) => { if (e.key === "Enter") requireUnlock(addPerson); });
   listEl.querySelectorAll("[data-student]").forEach((cb) => {
@@ -638,6 +649,24 @@ function renderRoster() {
 }
 
 // ---------- Balances tab ----------
+function renderPlayerDetail(balances) {
+  const detailEl = document.getElementById("playerDetail");
+  if (!detailEl) return;
+  if (!selectedBalanceId) { detailEl.innerHTML = ""; return; }
+  const p = balances.find((b) => b.id === selectedBalanceId);
+  if (!p) { detailEl.innerHTML = ""; return; }
+  detailEl.innerHTML = `
+    <div class="list">
+      <div class="list-item" style="flex-direction:column;align-items:flex-start;gap:8px">
+        <div class="bal-name" style="font-size:17px">${esc(p.name)}${p.isStudent ? ' <span class="chip" style="background:var(--surface-hover);color:var(--accent)">Student</span>' : ''}</div>
+        <div class="bal-amt ${p.balance > 0 ? "pos" : "zero"}" style="font-size:26px">${money(p.balance)}</div>
+        <div class="bal-sub">${p.sessionsAttended} session${p.sessionsAttended === 1 ? "" : "s"} all-time · sessions owed ${money(p.sessionsOwed)}${p.chargesOwed ? " · other charges " + money(p.chargesOwed) : ""} · paid ${money(p.paid)}</div>
+        <div class="bal-sub" style="color:var(--muted-2)">${p.sessionsThisYear} practice${p.sessionsThisYear === 1 ? "" : "s"} attended in ${new Date().getFullYear()}</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderBalances() {
   const el = document.getElementById("balances");
   const balances = computeBalances().sort((a, b) => b.balance - a.balance);
@@ -646,16 +675,43 @@ function renderBalances() {
     return;
   }
   const totalOutstanding = balances.reduce((sum, p) => sum + Math.max(p.balance, 0), 0);
+
+  if (!isUnlocked) {
+    const sortedByName = [...balances].sort((a, b) => a.name.localeCompare(b.name));
+    el.innerHTML = `
+      <select id="playerSelect">
+        <option value="">Select your name…</option>
+        ${sortedByName.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}
+      </select>
+      <div id="playerDetail" style="margin-top:16px"></div>
+    `;
+    const select = document.getElementById("playerSelect");
+    select.addEventListener("change", (e) => {
+      selectedBalanceId = e.target.value || null;
+      renderPlayerDetail(balances);
+    });
+    if (selectedBalanceId && balances.some((p) => p.id === selectedBalanceId)) {
+      select.value = selectedBalanceId;
+      renderPlayerDetail(balances);
+    }
+    return;
+  }
+
   el.innerHTML = `
     <div class="balance-total">
       <span class="muted" style="font-size:14px">Total outstanding</span>
       <span class="amt">${money(totalOutstanding)}</span>
     </div>
-    ${isUnlocked ? `
-    <button class="btn-outline" id="exportBalancesBtn">
-      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Export balances (CSV)
-    </button>` : ""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-outline" id="exportBalancesBtn" style="margin-top:0">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export balances (CSV)
+      </button>
+      <button class="btn-outline" id="manageRosterBtn" style="margin-top:0">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Manage roster
+      </button>
+    </div>
     <div class="list" style="margin-top:14px">
       ${balances.map((p) => `
         <div>
@@ -667,9 +723,8 @@ function renderBalances() {
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
               <span class="bal-amt ${p.balance > 0 ? "pos" : "zero"}">${money(p.balance)}</span>
-              ${isUnlocked ? `
               <button class="btn-small" data-charge="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Add charge</button>
-              <button class="btn-small" data-pay="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Record payment</button>` : ""}
+              <button class="btn-small" data-pay="${p.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Record payment</button>
             </div>
           </div>
           ${payingForId === p.id ? `
@@ -694,6 +749,11 @@ function renderBalances() {
     const rows = [["Name", "Student", "Sessions Attended", `Sessions Attended (${new Date().getFullYear()})`, "Sessions Owed", "Other Charges", "Total Paid", "Balance"],
       ...balances.map((p) => [p.name, p.isStudent ? "Yes" : "No", p.sessionsAttended, p.sessionsThisYear, p.sessionsOwed.toFixed(2), p.chargesOwed.toFixed(2), p.paid.toFixed(2), p.balance.toFixed(2)])];
     downloadCSV(`dues-balances-${todayISO()}.csv`, rows);
+  });
+  const manageRosterBtn = document.getElementById("manageRosterBtn");
+  if (manageRosterBtn) manageRosterBtn.addEventListener("click", () => {
+    tab = "roster";
+    renderAll();
   });
   el.querySelectorAll("[data-pay]").forEach((btn) => {
     btn.addEventListener("click", () => requireUnlock(() => {
@@ -803,13 +863,49 @@ function renderHistory() {
 }
 
 // ---------- Main render ----------
+function renderRanking() {
+  const el = document.getElementById("ranking");
+  if (data.roster.length === 0) {
+    el.innerHTML = emptyState("No ranking yet", "Add members and mark attendance to see this year's attendance leaders.");
+    return;
+  }
+  const year = new Date().getFullYear();
+  const ranked = computeBalances()
+    .sort((a, b) => b.sessionsThisYear - a.sessionsThisYear || a.name.localeCompare(b.name));
+  let currentRank = 0;
+  let prevCount = null;
+  ranked.forEach((p, i) => {
+    if (p.sessionsThisYear !== prevCount) { currentRank = i + 1; prevCount = p.sessionsThisYear; }
+    p.rank = currentRank;
+  });
+  const medal = { 1: "🥇", 2: "🥈", 3: "🥉" };
+  el.innerHTML = `
+    <div class="row-between" style="margin-bottom:14px">
+      <span class="muted" style="font-size:14px">Attendance leaders</span>
+      <span class="mono muted" style="font-size:12px">${year}</span>
+    </div>
+    <div class="list">
+      ${ranked.map((p) => `
+        <div class="list-item">
+          <span style="display:flex;align-items:center;gap:10px">
+            <span class="mono" style="width:22px;text-align:center;color:var(--muted)">${medal[p.rank] || p.rank}</span>
+            <span>${esc(p.name)}${p.isStudent ? ' <span class="chip" style="background:var(--surface-hover);color:var(--accent)">Student</span>' : ''}</span>
+          </span>
+          <span class="mono" style="color:var(--accent)">${p.sessionsThisYear}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderAll() {
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.querySelectorAll(".section").forEach((s) => s.classList.toggle("active", s.id === tab));
   renderHeader();
   renderPractice();
-  renderRoster();
   renderBalances();
+  renderRanking();
+  renderRoster();
   renderHistory();
 }
 
