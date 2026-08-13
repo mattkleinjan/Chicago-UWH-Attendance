@@ -260,6 +260,7 @@ let detailExpandedId = null;
 let editingChargeEntryId = null;
 let editingPaymentEntryId = null;
 let connected = false;
+let practiceInitializedFromData = false;
 let suppressNextRemoteRender = false;
 
 function save() {
@@ -279,6 +280,10 @@ dbRef.on("value", (snapshot) => {
   if (suppressNextRemoteRender) { suppressNextRemoteRender = false; return; }
   const val = snapshot.val();
   data = val ? { ...defaultState, ...val } : { ...defaultState };
+  if (!practiceInitializedFromData) {
+    practiceInitializedFromData = true;
+    initPracticeChecks();
+  }
   renderAll();
 });
 
@@ -456,10 +461,12 @@ function emptyState(title, body) {
 // ---------- Practice tab ----------
 let practiceDate = todayISO();
 let checkedIds = new Set();
+let attendanceUnlocked = false;
 
 function initPracticeChecks() {
   const existing = data.sessions.find((s) => s.date === practiceDate);
   checkedIds = new Set(existing ? existing.attendeeIds : []);
+  attendanceUnlocked = !existing;
 }
 initPracticeChecks();
 
@@ -470,13 +477,26 @@ function renderPractice() {
     return;
   }
   const existing = data.sessions.find((s) => s.date === practiceDate);
+  const locked = !!existing && !attendanceUnlocked;
   el.innerHTML = `
     <div class="row-between" style="margin-bottom:14px">
       <input type="date" id="dateInput" value="${practiceDate}" />
       <span class="mono muted" style="font-size:12px">${checkedIds.size} of ${data.roster.length} present · ${money(checkedIds.size * data.fee)}</span>
     </div>
+    ${locked ? `
+    <div class="muted" style="font-size:12px;margin-bottom:10px;display:flex;align-items:center;gap:6px">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Attendance saved for this date — tap "Update attendance" to make changes.
+    </div>` : ""}
     <div class="list">
-      ${data.roster.map((p) => `
+      ${data.roster.map((p) => locked ? `
+        <div class="list-item" style="opacity:0.7">
+          <span>${esc(p.name)}</span>
+          <span class="check ${checkedIds.has(p.id) ? "on" : ""}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0A1B28" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+        </div>
+      ` : `
         <button class="list-item pressable" data-toggle="${p.id}">
           <span>${esc(p.name)}</span>
           <span class="check ${checkedIds.has(p.id) ? "on" : ""}">
@@ -485,28 +505,37 @@ function renderPractice() {
         </button>
       `).join("")}
     </div>
-    <button class="btn" id="saveAttendance">${existing ? "Update attendance" : "Save attendance"}</button>
+    <button class="btn" id="saveAttendance">${locked ? "Update attendance" : "Save attendance"}</button>
   `;
   document.getElementById("dateInput").addEventListener("change", (e) => {
     practiceDate = e.target.value;
     initPracticeChecks();
     renderPractice();
   });
-  el.querySelectorAll("[data-toggle]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.dataset.toggle;
-      checkedIds.has(id) ? checkedIds.delete(id) : checkedIds.add(id);
-      renderPractice();
+  if (!locked) {
+    el.querySelectorAll("[data-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.toggle;
+        checkedIds.has(id) ? checkedIds.delete(id) : checkedIds.add(id);
+        renderPractice();
+      });
     });
-  });
+  }
   document.getElementById("saveAttendance").addEventListener("click", () => {
+    if (locked) {
+      attendanceUnlocked = true;
+      renderPractice();
+      return;
+    }
     const attendeeIds = Array.from(checkedIds);
     const idx = data.sessions.findIndex((s) => s.date === practiceDate);
     if (idx >= 0) data.sessions[idx].attendeeIds = attendeeIds;
     else data.sessions.push({ id: uid(), date: practiceDate, fee: data.fee, studentFee: data.studentFee, attendeeIds });
     save();
+    attendanceUnlocked = false;
     renderPractice();
     renderBalances();
+    renderRanking();
     renderHistory();
   });
 }
