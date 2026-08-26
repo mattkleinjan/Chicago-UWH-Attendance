@@ -224,7 +224,13 @@
 <script>
 const STORAGE_KEY = "uhc-attendance-v1";
 const uid = () => Math.random().toString(36).slice(2, 10);
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 const money = (n) => (n < 0 ? "-$" : "$") + Math.abs(n).toFixed(2);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -257,6 +263,8 @@ let payingForId = null;
 let chargingForId = null;
 let selectedBalanceId = null;
 let detailExpandedId = null;
+let showPaymentsLog = false;
+let showAllPaymentsLogEntries = false;
 let editingChargeEntryId = null;
 let editingPaymentEntryId = null;
 let connected = false;
@@ -736,6 +744,34 @@ function renderPlayerDetail() {
   if (togglePaymentsBtn) togglePaymentsBtn.addEventListener("click", () => { showAllPayments = !showAllPayments; renderPlayerDetail(); });
 }
 
+function renderPaymentsLogPanel(balances) {
+  const nameFor = (id) => (balances.find((b) => b.id === id) || {}).name || "(removed)";
+  const allPayments = [...(data.payments || [])].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const shown = showAllPaymentsLogEntries ? allPayments : allPayments.slice(0, 20);
+  return `
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+      <div class="row-between" style="margin-bottom:10px">
+        <span style="font-size:14px;font-weight:600;color:var(--text-bright)">Recent payments</span>
+        <button class="btn-outline" id="exportPaymentsLogBtn" style="margin-top:0">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export payments (CSV)
+        </button>
+      </div>
+      ${allPayments.length === 0 ? `<div class="muted" style="font-size:12px">No payments recorded yet.</div>` : `
+      <div class="list">
+        ${shown.map((pay) => `
+          <div class="list-item">
+            <span style="font-size:13px">${esc(nameFor(pay.personId))} <span class="muted mono" style="font-size:11px">${pay.date}</span></span>
+            <span class="mono" style="color:var(--accent)">${money(pay.amount)}</span>
+          </div>
+        `).join("")}
+      </div>
+      ${allPayments.length > 20 ? `<button class="btn-outline" id="togglePaymentsLogAllBtn" style="margin-top:8px">${showAllPaymentsLogEntries ? "Show less" : `Show all ${allPayments.length}`}</button>` : ""}
+      `}
+    </div>
+  `;
+}
+
 function renderPersonDetailsAdmin(personId) {
   const charges = (data.charges || []).filter((c) => c.personId === personId).sort((a, b) => a.date < b.date ? 1 : -1);
   const payments = (data.payments || []).filter((pay) => pay.personId === personId).sort((a, b) => a.date < b.date ? 1 : -1);
@@ -832,11 +868,16 @@ function renderBalances() {
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export balances (CSV)
       </button>
+      <button class="btn-outline" id="togglePaymentsLogBtn" style="margin-top:0">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        ${showPaymentsLog ? "Hide recent payments" : "Recent payments"}
+      </button>
       <button class="btn-outline" id="manageRosterBtn" style="margin-top:0">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Manage roster
       </button>
     </div>
+    ${showPaymentsLog ? renderPaymentsLogPanel(balances) : ""}
     <div class="list" style="margin-top:14px">
       ${balances.map((p) => `
         <div>
@@ -882,6 +923,24 @@ function renderBalances() {
   if (manageRosterBtn) manageRosterBtn.addEventListener("click", () => {
     tab = "roster";
     renderAll();
+  });
+  const togglePaymentsLogBtn = document.getElementById("togglePaymentsLogBtn");
+  if (togglePaymentsLogBtn) togglePaymentsLogBtn.addEventListener("click", () => {
+    showPaymentsLog = !showPaymentsLog;
+    showAllPaymentsLogEntries = false;
+    renderBalances();
+  });
+  const togglePaymentsLogAllBtn = document.getElementById("togglePaymentsLogAllBtn");
+  if (togglePaymentsLogAllBtn) togglePaymentsLogAllBtn.addEventListener("click", () => {
+    showAllPaymentsLogEntries = !showAllPaymentsLogEntries;
+    renderBalances();
+  });
+  const exportPaymentsLogBtn = document.getElementById("exportPaymentsLogBtn");
+  if (exportPaymentsLogBtn) exportPaymentsLogBtn.addEventListener("click", () => {
+    const nameFor = (id) => (balances.find((b) => b.id === id) || {}).name || "(removed)";
+    const allPayments = [...(data.payments || [])].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    const rows = [["Name", "Date", "Amount"], ...allPayments.map((pay) => [nameFor(pay.personId), pay.date, pay.amount.toFixed(2)])];
+    downloadCSV(`payments-log-${todayISO()}.csv`, rows);
   });
   el.querySelectorAll("[data-details]").forEach((btn) => {
     btn.addEventListener("click", () => {
