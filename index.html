@@ -201,6 +201,22 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="addVisitorModal">
+    <div class="modal-card" style="max-width:360px">
+      <h3>Add visitor</h3>
+      <p>Tap a previous visitor to add them to today, or add someone new.</p>
+      <div id="visitorModalList" style="max-height:240px;overflow-y:auto;margin-bottom:14px"></div>
+      <div class="add-row" style="margin-bottom:0;flex-wrap:wrap">
+        <input type="text" id="newVisitorName" placeholder="New visitor's name" style="flex:1;min-width:140px" />
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted-2);white-space:nowrap">
+          <input type="checkbox" id="newVisitorStudent" style="width:16px;height:16px" /> Student
+        </label>
+        <button id="addNewVisitorBtn">+ Add</button>
+      </div>
+      <button class="btn" id="closeVisitorModalBtn">Done</button>
+    </div>
+  </div>
+
   <nav>
     <div class="tabs">
       <button class="tab-btn" data-tab="practice">Today</button>
@@ -215,6 +231,7 @@
     <section id="balances" class="section"></section>
     <section id="ranking" class="section"></section>
     <section id="roster" class="section"></section>
+    <section id="visitors" class="section"></section>
     <section id="history" class="section"></section>
   </main>
 </div>
@@ -242,6 +259,7 @@ const defaultState = {
   sessions: [],
   payments: [],
   charges: [],
+  visitors: [],
 };
 
 const firebaseConfig = {
@@ -267,6 +285,7 @@ let showPaymentsLog = false;
 let showAllPaymentsLogEntries = false;
 let editingChargeEntryId = null;
 let editingPaymentEntryId = null;
+let editingVisitorNameId = null;
 let connected = false;
 let practiceInitializedFromData = false;
 let suppressNextRemoteRender = false;
@@ -288,6 +307,9 @@ dbRef.on("value", (snapshot) => {
   if (suppressNextRemoteRender) { suppressNextRemoteRender = false; return; }
   const val = snapshot.val();
   data = val ? { ...defaultState, ...val } : { ...defaultState };
+  if ((!data.visitors || data.visitors.length === 0) && val && val.guests && val.guests.length > 0) {
+    data.visitors = val.guests;
+  }
   if (!practiceInitializedFromData) {
     practiceInitializedFromData = true;
     initPracticeChecks();
@@ -342,6 +364,64 @@ document.getElementById("passcodeSubmit").addEventListener("click", submitPassco
 document.getElementById("passcodeCancel").addEventListener("click", closeUnlockModal);
 document.getElementById("passcodeInput").addEventListener("keydown", (e) => { if (e.key === "Enter") submitPasscode(); });
 document.getElementById("unlockModal").addEventListener("click", (e) => { if (e.target.id === "unlockModal") closeUnlockModal(); });
+
+// ---------- Add Visitor modal ----------
+function openAddVisitorModal() {
+  renderAddVisitorModalList();
+  document.getElementById("newVisitorName").value = "";
+  document.getElementById("newVisitorStudent").checked = false;
+  document.getElementById("addVisitorModal").classList.add("open");
+}
+
+function closeAddVisitorModal() {
+  document.getElementById("addVisitorModal").classList.remove("open");
+  renderPractice();
+}
+
+function renderAddVisitorModalList() {
+  const listEl = document.getElementById("visitorModalList");
+  const visitors = data.visitors || [];
+  if (visitors.length === 0) {
+    listEl.innerHTML = `<div class="muted" style="font-size:12px">No previous visitors yet — add one below.</div>`;
+  } else {
+    listEl.innerHTML = `<div class="list">
+      ${[...visitors].sort((a, b) => a.name.localeCompare(b.name)).map((v) => `
+        <button class="list-item pressable" data-modal-toggle-visitor="${v.id}">
+          <span>${esc(v.name)}${v.isStudent ? ' <span class="chip" style="background:var(--surface-hover);color:var(--accent)">Student</span>' : ''}</span>
+          <span class="check ${visitorCheckedIds.has(v.id) ? "on" : ""}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0A1B28" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+        </button>
+      `).join("")}
+    </div>`;
+  }
+  listEl.querySelectorAll("[data-modal-toggle-visitor]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.modalToggleVisitor;
+      visitorCheckedIds.has(id) ? visitorCheckedIds.delete(id) : visitorCheckedIds.add(id);
+      renderAddVisitorModalList();
+    });
+  });
+}
+
+function addNewVisitorFromModal() {
+  const input = document.getElementById("newVisitorName");
+  const isStudent = document.getElementById("newVisitorStudent").checked;
+  const name = input.value.trim();
+  if (!name) return;
+  data.visitors = data.visitors || [];
+  const newVisitor = { id: uid(), name, isStudent };
+  data.visitors.push(newVisitor);
+  visitorCheckedIds.add(newVisitor.id);
+  save();
+  input.value = "";
+  document.getElementById("newVisitorStudent").checked = false;
+  renderAddVisitorModalList();
+}
+document.getElementById("addNewVisitorBtn").addEventListener("click", addNewVisitorFromModal);
+document.getElementById("newVisitorName").addEventListener("keydown", (e) => { if (e.key === "Enter") addNewVisitorFromModal(); });
+document.getElementById("closeVisitorModalBtn").addEventListener("click", closeAddVisitorModal);
+document.getElementById("addVisitorModal").addEventListener("click", (e) => { if (e.target.id === "addVisitorModal") closeAddVisitorModal(); });
 
 function downloadCSV(filename, rows) {
   const escCsv = (v) => {
@@ -469,14 +549,20 @@ function emptyState(title, body) {
 // ---------- Practice tab ----------
 let practiceDate = todayISO();
 let checkedIds = new Set();
+let visitorCheckedIds = new Set();
 let attendanceUnlocked = false;
 
 function initPracticeChecks() {
   const existing = data.sessions.find((s) => s.date === practiceDate);
   checkedIds = new Set(existing ? existing.attendeeIds : []);
+  visitorCheckedIds = new Set(existing ? (existing.visitorIds || []) : []);
   attendanceUnlocked = !existing;
 }
 initPracticeChecks();
+
+function visitorNameFor(id) {
+  return (data.visitors || []).find((v) => v.id === id)?.name || "(removed)";
+}
 
 function renderPractice() {
   const el = document.getElementById("practice");
@@ -486,10 +572,12 @@ function renderPractice() {
   }
   const existing = data.sessions.find((s) => s.date === practiceDate);
   const locked = !!existing && !attendanceUnlocked;
+  const totalPresent = checkedIds.size + visitorCheckedIds.size;
+  const totalCost = checkedIds.size * data.fee + visitorCheckedIds.size * data.fee;
   el.innerHTML = `
     <div class="row-between" style="margin-bottom:14px">
       <input type="date" id="dateInput" value="${practiceDate}" />
-      <span class="mono muted" style="font-size:12px">${checkedIds.size} of ${data.roster.length} present · ${money(checkedIds.size * data.fee)}</span>
+      <span class="mono muted" style="font-size:12px">${totalPresent} present · ${money(totalCost)}</span>
     </div>
     ${locked ? `
     <div class="muted" style="font-size:12px;margin-bottom:10px;display:flex;align-items:center;gap:6px">
@@ -513,6 +601,25 @@ function renderPractice() {
         </button>
       `).join("")}
     </div>
+    ${visitorCheckedIds.size > 0 || !locked ? `
+    <div style="margin-top:18px">
+      <div style="font-size:12px;font-weight:600;color:var(--muted-2);margin-bottom:8px">Visitors today</div>
+      ${visitorCheckedIds.size === 0 ? `<div class="muted" style="font-size:12px;margin-bottom:8px">None added yet.</div>` : `
+      <div class="list" style="margin-bottom:8px">
+        ${Array.from(visitorCheckedIds).map((vid) => locked ? `
+          <div class="list-item" style="opacity:0.7">
+            <span>${esc(visitorNameFor(vid))} <span class="chip" style="background:var(--surface-hover);color:var(--muted-2)">Visitor</span></span>
+            <span class="check on"><svg viewBox="0 0 24 24" fill="none" stroke="#0A1B28" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>
+          </div>
+        ` : `
+          <button class="list-item pressable" data-remove-visitor-today="${vid}">
+            <span>${esc(visitorNameFor(vid))} <span class="chip" style="background:var(--surface-hover);color:var(--muted-2)">Visitor</span></span>
+            <span class="check on"><svg viewBox="0 0 24 24" fill="none" stroke="#0A1B28" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>
+          </button>
+        `).join("")}
+      </div>`}
+      ${!locked ? `<button class="btn-outline" id="addVisitorBtn" style="margin-top:0">+ Add visitor</button>` : ""}
+    </div>` : ""}
     <button class="btn" id="saveAttendance">${locked ? "Update attendance" : "Save attendance"}</button>
   `;
   document.getElementById("dateInput").addEventListener("change", (e) => {
@@ -528,6 +635,14 @@ function renderPractice() {
         renderPractice();
       });
     });
+    el.querySelectorAll("[data-remove-visitor-today]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        visitorCheckedIds.delete(btn.dataset.removeVisitorToday);
+        renderPractice();
+      });
+    });
+    const addVisitorBtn = document.getElementById("addVisitorBtn");
+    if (addVisitorBtn) addVisitorBtn.addEventListener("click", openAddVisitorModal);
   }
   document.getElementById("saveAttendance").addEventListener("click", () => {
     if (locked) {
@@ -536,9 +651,10 @@ function renderPractice() {
       return;
     }
     const attendeeIds = Array.from(checkedIds);
+    const visitorIds = Array.from(visitorCheckedIds);
     const idx = data.sessions.findIndex((s) => s.date === practiceDate);
-    if (idx >= 0) data.sessions[idx].attendeeIds = attendeeIds;
-    else data.sessions.push({ id: uid(), date: practiceDate, fee: data.fee, studentFee: data.studentFee, attendeeIds });
+    if (idx >= 0) { data.sessions[idx].attendeeIds = attendeeIds; data.sessions[idx].visitorIds = visitorIds; }
+    else data.sessions.push({ id: uid(), date: practiceDate, fee: data.fee, studentFee: data.studentFee, attendeeIds, visitorIds });
     save();
     attendanceUnlocked = false;
     renderPractice();
@@ -549,6 +665,192 @@ function renderPractice() {
 }
 
 // ---------- Roster tab ----------
+function computeVisitorBalances() {
+  const map = {};
+  (data.visitors || []).forEach((g) => { map[g.id] = { id: g.id, name: g.name, isStudent: !!g.isStudent, sessionsAttended: 0, sessionsOwed: 0, chargesOwed: 0, paid: 0 }; });
+  (data.sessions || []).forEach((s) => {
+    (s.visitorIds || []).forEach((vid) => {
+      const v = map[vid];
+      if (v) {
+        const rate = v.isStudent && s.studentFee != null ? s.studentFee : s.fee;
+        v.sessionsAttended += 1;
+        v.sessionsOwed += rate;
+      }
+    });
+  });
+  (data.charges || []).forEach((c) => { if (map[c.personId]) map[c.personId].chargesOwed += c.amount; });
+  (data.payments || []).forEach((pay) => { if (map[pay.personId]) map[pay.personId].paid += pay.amount; });
+  return Object.values(map).map((g) => ({ ...g, balance: g.sessionsOwed + g.chargesOwed - g.paid }));
+}
+
+function renderVisitors() {
+  const el = document.getElementById("visitors");
+  const visitorBalances = computeVisitorBalances();
+  const trashIcon = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>`;
+  const editIconSmall = `<svg class="icon" style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+  el.innerHTML = `
+    <button id="backToBalancesFromVisitorsBtn" style="background:none;border:none;color:var(--muted);font-size:13px;display:flex;align-items:center;gap:4px;padding:0;margin-bottom:16px">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back to balances
+    </button>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
+      For one-off visiting players. Add them here first, then use "+ Add visitor" on the Today tab to check them into a practice — their attendance is charged automatically. They can stay on this list indefinitely; there's no need to remove them once they've paid.
+    </div>
+    <div class="add-row">
+      <input type="text" id="visitorNameToAdd" placeholder="Visiting player's name" />
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted-2);white-space:nowrap">
+        <input type="checkbox" id="studentVisitorToAdd" style="width:16px;height:16px" /> Student
+      </label>
+      <button id="addVisitorToListBtn">+ Add</button>
+    </div>
+    ${visitorBalances.length === 0 ? emptyState("No visitors right now", "Add a visiting player above to start tracking what they owe.") : `
+    <div class="list" style="margin-top:14px">
+      ${visitorBalances.map((g) => `
+        <div>
+          <div class="list-item">
+            <div>
+              ${editingVisitorNameId === g.id ? `
+              <div style="display:flex;align-items:center;gap:6px">
+                <input type="text" id="editVisitorNameInput" value="${esc(g.name)}" style="font-size:15px" />
+                <button class="btn-small" data-save-visitor-name="${g.id}">Save</button>
+                <button data-cancel-edit-visitor-name style="background:none;border:none;color:var(--muted)">✕</button>
+              </div>` : `
+              <div class="bal-name" style="display:flex;align-items:center;gap:6px">
+                ${esc(g.name)}${g.isStudent ? ' <span class="chip" style="background:var(--surface-hover);color:var(--accent)">Student</span>' : ''}
+                <button data-edit-visitor-name="${g.id}" style="background:none;border:none;color:var(--muted-2);display:inline-flex">${editIconSmall}</button>
+              </div>`}
+              <div class="bal-sub">${g.sessionsAttended} session${g.sessionsAttended === 1 ? "" : "s"} · sessions ${money(g.sessionsOwed)}${g.chargesOwed ? " · other charges " + money(g.chargesOwed) : ""} · paid ${money(g.paid)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+              <span class="bal-amt ${g.balance > 0 ? "pos" : "zero"}">${money(g.balance)}</span>
+              <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)">
+                <input type="checkbox" data-visitor-student="${g.id}" ${g.isStudent ? "checked" : ""} style="width:15px;height:15px" /> Student
+              </label>
+              <button class="btn-small" data-visitor-charge="${g.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Add charge</button>
+              <button class="btn-small" data-visitor-pay="${g.id}" style="background:none;border:1px solid var(--border-strong);color:var(--muted-2)">Record payment</button>
+              <button data-visitor-remove="${g.id}" style="background:none;border:none;color:var(--muted)">${trashIcon}</button>
+            </div>
+          </div>
+          ${chargingForId === g.id ? `
+            <div class="pay-row">
+              <input type="text" id="chargeDesc" placeholder="e.g. Equipment fee" style="flex:1" value="${document.getElementById("chargeDesc") ? document.getElementById("chargeDesc").value : ""}" />
+              <input type="number" step="0.01" min="0" id="chargeAmount" placeholder="Amount" style="width:90px" value="${document.getElementById("chargeAmount") ? document.getElementById("chargeAmount").value : ""}" />
+              <button class="btn-small" id="saveChargeBtn">Save</button>
+              <button id="cancelChargeBtn" style="background:none;border:none;color:var(--muted)">✕</button>
+            </div>` : ""}
+          ${payingForId === g.id ? `
+            <div class="pay-row">
+              <input type="date" id="payDate" value="${document.getElementById("payDate") ? document.getElementById("payDate").value : todayISO()}" />
+              <input type="number" step="0.01" min="0" id="payAmount" placeholder="Amount" value="${document.getElementById("payAmount") ? document.getElementById("payAmount").value : (g.balance > 0 ? g.balance.toFixed(2) : "")}" />
+              <button class="btn-small" id="savePayBtn">Save</button>
+              <button id="cancelPayBtn" style="background:none;border:none;color:var(--muted)">✕</button>
+            </div>` : ""}
+        </div>
+      `).join("")}
+    </div>`}
+  `;
+  document.getElementById("backToBalancesFromVisitorsBtn").addEventListener("click", () => {
+    tab = "balances";
+    renderAll();
+  });
+  const addVisitor = () => {
+    const input = document.getElementById("visitorNameToAdd");
+    const isStudent = document.getElementById("studentVisitorToAdd").checked;
+    const name = input.value.trim();
+    if (!name) return;
+    data.visitors = data.visitors || [];
+    data.visitors.push({ id: uid(), name, isStudent });
+    save();
+    renderVisitors();
+  };
+  document.getElementById("addVisitorToListBtn").addEventListener("click", addVisitor);
+  document.getElementById("visitorNameToAdd").addEventListener("keydown", (e) => { if (e.key === "Enter") addVisitor(); });
+  el.querySelectorAll("[data-visitor-student]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const id = cb.dataset.visitorStudent;
+      data.visitors = data.visitors.map((g) => g.id === id ? { ...g, isStudent: cb.checked } : g);
+      save();
+      renderVisitors();
+    });
+  });
+  el.querySelectorAll("[data-edit-visitor-name]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      editingVisitorNameId = btn.dataset.editVisitorName;
+      renderVisitors();
+    });
+  });
+  el.querySelectorAll("[data-cancel-edit-visitor-name]").forEach((btn) => {
+    btn.addEventListener("click", () => { editingVisitorNameId = null; renderVisitors(); });
+  });
+  el.querySelectorAll("[data-save-visitor-name]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.saveVisitorName;
+      const newName = document.getElementById("editVisitorNameInput").value.trim();
+      if (!newName) return;
+      data.visitors = data.visitors.map((g) => g.id === id ? { ...g, name: newName } : g);
+      editingVisitorNameId = null;
+      save();
+      renderVisitors();
+    });
+  });
+  const editVisitorNameInput = document.getElementById("editVisitorNameInput");
+  if (editVisitorNameInput) editVisitorNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.querySelector("[data-save-visitor-name]").click();
+  });
+  el.querySelectorAll("[data-visitor-charge]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      payingForId = null;
+      chargingForId = chargingForId === btn.dataset.visitorCharge ? null : btn.dataset.visitorCharge;
+      renderVisitors();
+      if (chargingForId) document.getElementById("chargeAmount").focus();
+    });
+  });
+  el.querySelectorAll("[data-visitor-pay]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      chargingForId = null;
+      payingForId = payingForId === btn.dataset.visitorPay ? null : btn.dataset.visitorPay;
+      renderVisitors();
+      if (payingForId) document.getElementById("payAmount").focus();
+    });
+  });
+  el.querySelectorAll("[data-visitor-remove]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.visitorRemove;
+      if (!confirm("Remove this visitor from the list? Their payment, charge, and attendance history will be kept.")) return;
+      data.visitors = data.visitors.filter((g) => g.id !== id);
+      visitorCheckedIds.delete(id);
+      save();
+      renderVisitors();
+      renderPractice();
+      renderHistory();
+    });
+  });
+  const cancelChargeBtn = document.getElementById("cancelChargeBtn");
+  if (cancelChargeBtn) cancelChargeBtn.addEventListener("click", () => { chargingForId = null; renderVisitors(); });
+  const saveChargeBtn = document.getElementById("saveChargeBtn");
+  if (saveChargeBtn) saveChargeBtn.addEventListener("click", () => {
+    const desc = document.getElementById("chargeDesc").value.trim();
+    const v = parseFloat(document.getElementById("chargeAmount").value);
+    if (!v || v <= 0) return;
+    data.charges.push({ id: uid(), personId: chargingForId, description: desc || "Other charge", amount: v, date: todayISO() });
+    chargingForId = null;
+    save();
+    renderVisitors();
+  });
+  const cancelPayBtn = document.getElementById("cancelPayBtn");
+  if (cancelPayBtn) cancelPayBtn.addEventListener("click", () => { payingForId = null; renderVisitors(); });
+  const savePayBtn = document.getElementById("savePayBtn");
+  if (savePayBtn) savePayBtn.addEventListener("click", () => {
+    const v = parseFloat(document.getElementById("payAmount").value);
+    const d = document.getElementById("payDate").value || todayISO();
+    if (!v || v <= 0) return;
+    data.payments.push({ id: uid(), personId: payingForId, amount: v, date: d });
+    payingForId = null;
+    save();
+    renderVisitors();
+  });
+}
+
 function renderRoster() {
   const el = document.getElementById("roster");
   el.innerHTML = `
@@ -696,6 +998,27 @@ function renderPlayerDetail() {
   const detailEl = document.getElementById("playerDetail");
   if (!detailEl) return;
   if (!selectedBalanceId) { detailEl.innerHTML = ""; return; }
+  if (selectedBalanceId === "__visitors__") {
+    const visitorBalances = computeVisitorBalances().sort((a, b) => a.name.localeCompare(b.name));
+    if (visitorBalances.length === 0) {
+      detailEl.innerHTML = `<div class="muted" style="font-size:12px">No visitors currently tracked.</div>`;
+      return;
+    }
+    detailEl.innerHTML = `
+      <div class="list">
+        ${visitorBalances.map((g) => `
+          <div class="list-item">
+            <div>
+              <div class="bal-name">${esc(g.name)}${g.isStudent ? ' <span class="chip" style="background:var(--surface-hover);color:var(--accent)">Student</span>' : ''}</div>
+              <div class="bal-sub">${g.sessionsAttended} session${g.sessionsAttended === 1 ? "" : "s"}${g.chargesOwed ? " · other charges " + money(g.chargesOwed) : ""} · paid ${money(g.paid)}</div>
+            </div>
+            <span class="bal-amt ${g.balance > 0 ? "pos" : "zero"}">${money(g.balance)}</span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    return;
+  }
   const p = computeBalances().find((b) => b.id === selectedBalanceId);
   if (!p) { detailEl.innerHTML = ""; return; }
   const charges = (data.charges || []).filter((c) => c.personId === selectedBalanceId).sort((a, b) => a.date < b.date ? 1 : -1);
@@ -745,7 +1068,7 @@ function renderPlayerDetail() {
 }
 
 function renderPaymentsLogPanel(balances) {
-  const nameFor = (id) => (balances.find((b) => b.id === id) || {}).name || "(removed)";
+  const nameFor = (id) => (balances.find((b) => b.id === id) || (data.visitors || []).find((v) => v.id === id) || {}).name || "(removed)";
   const allPayments = [...(data.payments || [])].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const shown = showAllPaymentsLogEntries ? allPayments : allPayments.slice(0, 20);
   return `
@@ -841,6 +1164,7 @@ function renderBalances() {
       <select id="playerSelect">
         <option value="">Select your name…</option>
         ${sortedByName.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}
+        <option value="__visitors__">Visitors</option>
       </select>
       <div id="playerDetail" style="margin-top:16px"></div>
     `;
@@ -851,7 +1175,7 @@ function renderBalances() {
       showAllPayments = false;
       renderPlayerDetail();
     });
-    if (selectedBalanceId && balances.some((p) => p.id === selectedBalanceId)) {
+    if (selectedBalanceId && (selectedBalanceId === "__visitors__" || balances.some((p) => p.id === selectedBalanceId))) {
       select.value = selectedBalanceId;
       renderPlayerDetail();
     }
@@ -875,6 +1199,10 @@ function renderBalances() {
       <button class="btn-outline" id="manageRosterBtn" style="margin-top:0">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Manage roster
+      </button>
+      <button class="btn-outline" id="manageVisitorsBtn" style="margin-top:0">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Visitors
       </button>
     </div>
     ${showPaymentsLog ? renderPaymentsLogPanel(balances) : ""}
@@ -924,6 +1252,11 @@ function renderBalances() {
     tab = "roster";
     renderAll();
   });
+  const manageVisitorsBtn = document.getElementById("manageVisitorsBtn");
+  if (manageVisitorsBtn) manageVisitorsBtn.addEventListener("click", () => {
+    tab = "visitors";
+    renderAll();
+  });
   const togglePaymentsLogBtn = document.getElementById("togglePaymentsLogBtn");
   if (togglePaymentsLogBtn) togglePaymentsLogBtn.addEventListener("click", () => {
     showPaymentsLog = !showPaymentsLog;
@@ -937,7 +1270,7 @@ function renderBalances() {
   });
   const exportPaymentsLogBtn = document.getElementById("exportPaymentsLogBtn");
   if (exportPaymentsLogBtn) exportPaymentsLogBtn.addEventListener("click", () => {
-    const nameFor = (id) => (balances.find((b) => b.id === id) || {}).name || "(removed)";
+    const nameFor = (id) => (balances.find((b) => b.id === id) || (data.visitors || []).find((v) => v.id === id) || {}).name || "(removed)";
     const allPayments = [...(data.payments || [])].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
     const rows = [["Name", "Date", "Amount"], ...allPayments.map((pay) => [nameFor(pay.personId), pay.date, pay.amount.toFixed(2)])];
     downloadCSV(`payments-log-${todayISO()}.csv`, rows);
@@ -1069,19 +1402,26 @@ function renderHistory() {
       Export session log (CSV)
     </button>` : ""}
     <div class="list" style="margin-top:14px">
-      ${sessions.map((s) => `
+      ${sessions.map((s) => {
+        const visitorIds = s.visitorIds || [];
+        const totalCount = s.attendeeIds.length + visitorIds.length;
+        const totalCost = totalCount * s.fee;
+        return `
         <div>
           <button class="session-header pressable" data-open="${s.id}" style="width:100%;background:none;border:none;color:inherit">
             <span class="mono" style="font-size:14px;display:flex;align-items:center;gap:6px">
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2">${openSessionId === s.id ? '<polyline points="6 9 12 15 18 9"/>' : '<polyline points="9 18 15 12 9 6"/>'}</svg>
               ${s.date}
             </span>
-            <span class="mono muted" style="font-size:12px">${s.attendeeIds.length} present · ${money(s.attendeeIds.length * s.fee)}</span>
+            <span class="mono muted" style="font-size:12px">${totalCount} present · ${money(totalCost)}</span>
           </button>
           ${openSessionId === s.id ? `
             <div class="session-detail">
               <div class="chips">
-                ${s.attendeeIds.length === 0 ? `<span class="muted" style="font-size:12px">No one marked present</span>` : s.attendeeIds.map((pid) => `<span class="chip">${esc(nameFor(pid))}</span>`).join("")}
+                ${totalCount === 0 ? `<span class="muted" style="font-size:12px">No one marked present</span>` : `
+                ${s.attendeeIds.map((pid) => `<span class="chip">${esc(nameFor(pid))}</span>`).join("")}
+                ${visitorIds.map((vid) => `<span class="chip" style="color:var(--accent)">${esc(visitorNameFor(vid))} · Visitor</span>`).join("")}
+                `}
               </div>
               ${isUnlocked ? `
               <div style="padding:0 16px 12px">
@@ -1092,13 +1432,18 @@ function renderHistory() {
               </div>` : ""}
             </div>` : ""}
         </div>
-      `).join("")}
+      `;
+      }).join("")}
     </div>
   `;
   const exportSessionsBtn = document.getElementById("exportSessionsBtn");
   if (exportSessionsBtn) exportSessionsBtn.addEventListener("click", () => {
-    const rows = [["Date", "Fee", "Attendee Count", "Total Collected", "Attendees"],
-      ...sessions.map((s) => [s.date, s.fee.toFixed(2), s.attendeeIds.length, (s.attendeeIds.length * s.fee).toFixed(2), s.attendeeIds.map(nameFor).join("; ")])];
+    const rows = [["Date", "Fee", "Attendee Count", "Total Collected", "Attendees", "Visitors"],
+      ...sessions.map((s) => {
+        const visitorIds = s.visitorIds || [];
+        const totalCount = s.attendeeIds.length + visitorIds.length;
+        return [s.date, s.fee.toFixed(2), totalCount, (totalCount * s.fee).toFixed(2), s.attendeeIds.map(nameFor).join("; "), visitorIds.map(visitorNameFor).join("; ")];
+      })];
     downloadCSV(`session-log-${todayISO()}.csv`, rows);
   });
   el.querySelectorAll("[data-open]").forEach((btn) => {
@@ -1162,6 +1507,7 @@ function renderAll() {
   renderBalances();
   renderRanking();
   renderRoster();
+  renderVisitors();
   renderHistory();
 }
 
